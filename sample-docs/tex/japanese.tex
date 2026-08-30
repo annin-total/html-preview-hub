@@ -1,0 +1,35 @@
+% 日本語サンプル（lualatex + luatexja が必要。Debian/Ubuntu では texlive-lang-japanese）
+\documentclass[11pt]{ltjsarticle}
+\usepackage{amsmath}
+\usepackage[margin=25mm]{geometry}
+
+\title{日本語 LaTeX のプレビュー確認}
+\author{html-preview-hub サンプル}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{目的}
+AI に生成させた日本語の \LaTeX{} 文書が、アプリ内でそのまま PDF として読めることを確認する。
+エンジンは \verb|\documentclass{ltjsarticle}| から lualatex と推定される。
+
+\section{数式}
+ソフトマックスの温度 $\tau$ を含む形は次のとおり。
+\begin{equation}
+  p_i = \frac{\exp(z_i / \tau)}{\sum_j \exp(z_j / \tau)}
+\end{equation}
+
+\section{表}
+\begin{center}
+\begin{tabular}{lr}
+  \hline
+  項目 & 値 \\
+  \hline
+  スキャン時間 & 134 ms \\
+  初期表示 & 188 ms \\
+  \hline
+\end{tabular}
+\end{center}
+
+\end{document}

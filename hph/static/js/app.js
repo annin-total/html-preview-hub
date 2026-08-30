@@ -35,6 +35,7 @@ const homeView = createHomeView({
     sentinel: $('#gridSentinel'),
     empty: $('#homeEmpty'),
     sortChips: $('#sortChips'),
+    kindChips: $('#kindChips'),
     hiddenChip: $('#hiddenChip'),
     scroller: $('#homeView'),
   },
@@ -65,11 +66,14 @@ const previewView = createPreviewView({
     stage: $('#stage'),
     placeholder: $('#previewPlaceholder'),
     error: $('#previewError'),
+    status: $('#previewStatus'),
     source: $('#previewSource'),
+    log: $('#previewLog'),
     crumbs: $('#crumbs'),
     favBtn: $('#favBtn'),
     reloadBtn: $('#reloadBtn'),
     sourceBtn: $('#sourceBtn'),
+    logBtn: $('#logBtn'),
     externalBtn: $('#externalBtn'),
     isolationBtn: $('#isolationBtn'),
   },
@@ -318,6 +322,9 @@ document.addEventListener('keydown', (event) => {
       break;
     case 'u':
       if (app.dataset.view === 'preview') previewView.toggleSource();
+      break;
+    case 'l':
+      if (app.dataset.view === 'preview') previewView.toggleLog();
       break;
     case 'f': {
       const file = previewView.current;

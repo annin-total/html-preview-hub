@@ -21,7 +21,7 @@ ENV_STATE_DIR = "HPH_STATE_DIR"
 #: 設定ファイルが存在しない / キーが欠けている場合に使う既定値。
 DEFAULTS: dict[str, Any] = {
     "roots": [],
-    "include_extensions": [".html", ".htm", ".xhtml"],
+    "include_extensions": [".html", ".htm", ".xhtml", ".tex"],
     "ignore_dirs": [
         ".git",
         ".hg",
@@ -48,6 +48,15 @@ DEFAULTS: dict[str, Any] = {
     "host": "127.0.0.1",
     "port": 8765,
     "open_browser": True,
+    # --- LaTeX プレビュー ---
+    "tex_enabled": True,
+    "tex_engine": "auto",
+    "tex_use_latexmk": True,
+    "tex_use_sibling_pdf": True,
+    "tex_max_passes": 2,
+    "tex_timeout_seconds": 90.0,
+    "tex_cache_limit": 200,
+    "tex_cache_dir": "",
 }
 
 
@@ -125,6 +134,14 @@ class Config:
     host: str = DEFAULTS["host"]
     port: int = DEFAULTS["port"]
     open_browser: bool = DEFAULTS["open_browser"]
+    tex_enabled: bool = DEFAULTS["tex_enabled"]
+    tex_engine: str = DEFAULTS["tex_engine"]
+    tex_use_latexmk: bool = DEFAULTS["tex_use_latexmk"]
+    tex_use_sibling_pdf: bool = DEFAULTS["tex_use_sibling_pdf"]
+    tex_max_passes: int = DEFAULTS["tex_max_passes"]
+    tex_timeout_seconds: float = DEFAULTS["tex_timeout_seconds"]
+    tex_cache_limit: int = DEFAULTS["tex_cache_limit"]
+    tex_cache_dir: str = DEFAULTS["tex_cache_dir"]
     path: Path = field(default_factory=default_config_path)
 
     # ------------------------------------------------------------------
@@ -174,6 +191,14 @@ class Config:
             host=str(merged["host"]),
             port=int(merged["port"]),
             open_browser=bool(merged["open_browser"]),
+            tex_enabled=bool(merged["tex_enabled"]),
+            tex_engine=str(merged["tex_engine"]).strip() or "auto",
+            tex_use_latexmk=bool(merged["tex_use_latexmk"]),
+            tex_use_sibling_pdf=bool(merged["tex_use_sibling_pdf"]),
+            tex_max_passes=max(1, int(merged["tex_max_passes"])),
+            tex_timeout_seconds=max(5.0, float(merged["tex_timeout_seconds"])),
+            tex_cache_limit=max(1, int(merged["tex_cache_limit"])),
+            tex_cache_dir=str(merged["tex_cache_dir"]) or str(default_state_dir() / "tex-cache"),
         )
         return config
 

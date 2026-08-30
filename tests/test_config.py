@@ -15,7 +15,7 @@ def test_defaults_applied_for_missing_keys(tmp_path: Path) -> None:
     path.write_text(json.dumps({"port": 9000}), encoding="utf-8")
     config = Config.load(path)
     assert config.port == 9000
-    assert config.include_extensions == [".html", ".htm", ".xhtml"]
+    assert config.include_extensions == [".html", ".htm", ".xhtml", ".tex"]
 
 
 def test_roots_accept_string_and_object(tmp_path: Path) -> None:

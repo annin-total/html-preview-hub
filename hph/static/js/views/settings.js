@@ -11,6 +11,7 @@ const SHORTCUTS = [
   ['Esc', '一覧へ戻る / 検索解除'],
   ['r', 'プレビューを再読み込み'],
   ['u', 'ソース表示の切り替え'],
+  ['l', 'コンパイルログの切り替え'],
   ['f', 'お気に入り切り替え'],
   ['[', 'サイドバーの表示切り替え'],
   [', (カンマ)', '設定を開く'],
@@ -21,11 +22,13 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
   let config = null;
   let browserState = null;
   let lastRoots = [];
+  let texStatus = null;
 
   async function refresh() {
     const payload = await api.config();
     config = payload.config;
     dom.configPathHint.textContent = payload.configPath;
+    texStatus = await api.texStatus().catch(() => null);
     render();
   }
 
@@ -129,6 +132,66 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
     ]);
   }
 
+  /** LaTeX 設定と、検出されたエンジンの表示。 */
+  function texSettings() {
+    const fields = [
+      ['tex_engine', 'エンジン（auto で自動判定）', String, (v) => v.trim() || 'auto'],
+      ['tex_timeout_seconds', 'コンパイルのタイムアウト（秒）', String, (v) => Number(v)],
+      ['tex_max_passes', 'コンパイル回数（latexmk 未使用時）', String, (v) => Number(v)],
+    ];
+    const inputs = new Map();
+    const rows = fields.map(([key, label, format]) => {
+      const input = el('input', { type: 'text', value: format(config[key]) });
+      inputs.set(key, input);
+      return el('div', { class: 'field', style: 'margin-bottom:8px' }, [
+        el('span', { style: 'flex:0 0 210px;font-size:12px;color:var(--text-dim)', text: label }),
+        input,
+      ]);
+    });
+    const detected = texStatus
+      ? texStatus.engines.length
+        ? `検出: ${texStatus.engines.join(', ')}${texStatus.latexmk ? ' / latexmk' : ''}`
+        : '検出されたエンジンはありません（pdflatex / xelatex / lualatex / tectonic のいずれかを導入してください）'
+      : '';
+    return el('div', {}, [
+      el('div', { class: 'field', style: 'margin-bottom:8px' }, [
+        el('span', { style: 'flex:0 0 210px;font-size:12px;color:var(--text-dim)', text: 'PDF プレビュー' }),
+        el('button', {
+          class: 'chip',
+          type: 'button',
+          'aria-pressed': String(Boolean(config.tex_enabled)),
+          text: config.tex_enabled ? '有効' : '無効',
+          onclick: () => save({ tex_enabled: !config.tex_enabled }),
+        }),
+      ]),
+      ...rows,
+      el('div', { style: 'font-size:11px;color:var(--text-faint);margin:4px 0 10px', text: detected }),
+      el('div', { class: 'field' }, [
+        el('button', {
+          class: 'pill',
+          type: 'button',
+          text: 'LaTeX 設定を保存',
+          onclick: () => {
+            const patch = {};
+            for (const [key, , , parse] of fields) patch[key] = parse(inputs.get(key).value);
+            save(patch);
+          },
+        }),
+      ]),
+    ]);
+  }
+
+  async function save(patch) {
+    try {
+      await api.updateConfig(patch);
+      onNotify('設定を保存しました');
+      await onChanged();
+      refresh();
+    } catch (error) {
+      onNotify(`保存できません: ${error.message}`);
+    }
+  }
+
   function scanSettings() {
     const fields = [
       ['include_extensions', '対象拡張子（カンマ区切り）', (v) => v.join(', '), (v) => v.split(',').map((s) => s.trim()).filter(Boolean)],
@@ -152,17 +215,10 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
           class: 'pill',
           type: 'button',
           text: 'スキャン設定を保存',
-          onclick: async () => {
+          onclick: () => {
             const patch = {};
             for (const [key, , , parse] of fields) patch[key] = parse(inputs.get(key).value);
-            try {
-              await api.updateConfig(patch);
-              onNotify('設定を保存しました');
-              await onChanged();
-              refresh();
-            } catch (error) {
-              onNotify(`保存できません: ${error.message}`);
-            }
+            save(patch);
           },
         }),
       ]),
@@ -179,6 +235,8 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
       addForm(),
       el('div', { class: 'section-title', text: 'スキャン設定' }),
       scanSettings(),
+      el('div', { class: 'section-title', text: 'LaTeX' }),
+      texSettings(),
       el('div', { class: 'section-title', text: 'ショートカット' }),
       el(
         'div',

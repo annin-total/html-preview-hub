@@ -1,24 +1,30 @@
 # html-preview-hub
 
-ローカルのあちこちに散らばった HTML ファイル（AI が生成した使い捨てのものから、残しておきたい資料まで）を
-**1 つの画面で横断・検索・即プレビュー**するためのローカル Web アプリ。
+ローカルのあちこちに散らばった **HTML / LaTeX** ファイル（AI が生成した使い捨てのものから、
+残しておきたい資料まで）を **1 つの画面で横断・検索・即プレビュー**するためのローカル Web アプリ。
 
-「フォルダを掘って、ファイルを探して、ブラウザで開く」というポチポチ作業をなくすことが目的です。
+「フォルダを掘って、ファイルを探して、ブラウザで開く（LaTeX ならさらに手でコンパイルする）」という
+ポチポチ作業をなくすことが目的です。
 
 ![ホーム](docs/screenshots/home.png)
 
-| 検索（インクリメンタル） | プレビュー（サイドバー + iframe） |
+| 検索（インクリメンタル） | HTML プレビュー |
 | --- | --- |
 | ![検索](docs/screenshots/search.png) | ![プレビュー](docs/screenshots/preview.png) |
 
+| LaTeX プレビュー（自動コンパイル） | コンパイルエラーのログ |
+| --- | --- |
+| ![TeX プレビュー](docs/screenshots/tex-preview.png) | ![TeX ログ](docs/screenshots/tex-error.png) |
+
 ## 特徴
 
-- **フォルダカードのホーム画面** — フォルダ単位でカード表示。件名（HTML の `<title>`）、件数、日付が一覧で分かる。
+- **フォルダカードのホーム画面** — フォルダ単位でカード表示。件名（HTML の `<title>` / LaTeX の `\title`）、件数、日付が一覧で分かる。
 - **インクリメンタルサーチ** — フォルダ名・パス・ファイル名・タイトルを横断。ヒット箇所をハイライトし、一致したファイルをカード内で先頭に出す。
 - **インラインプレビュー** — 外部ブラウザを開かず、アプリ内の iframe に表示。`iframe` は既定で `allow-same-origin` なしのサンドボックスなので、プレビュー対象の CSS / JS はアプリ本体に一切干渉できない。
+- **LaTeX の自動コンパイル** — `.tex` を選ぶとサーバー側で PDF にして同じ画面に表示する。エンジン（pdflatex / xelatex / lualatex / uplatex / tectonic）はマジックコメントとプリアンブルから自動判定し、結果は内容ハッシュでキャッシュするので 2 回目以降は即表示。失敗したらエラー箇所を含むログをその場で開ける。
 - **相対パス・ルート絶対パスの解決** — プレビュー対象と同じ階層の画像 / CSS / JS はそのまま読める。`/assets/app.css` のようなルート絶対パス参照も Referer から解決する。
 - **即応する切り替え** — 一度開いたファイルは iframe プールに残るため、行き来しても再読み込みが起きない。サイドバーは仮想スクロールで数千件でも軽い。
-- **お気に入り / 非表示フォルダ** — 残したいものに星を付け、ノイズになるフォルダはカード右クリックで隠す。
+- **お気に入り / 非表示フォルダ / 種類フィルタ** — 残したいものに星を付け、ノイズになるフォルダはカード右クリックで隠し、HTML と TeX はチップで切り替える。
 - **自動追従** — バックグラウンドで再スキャンし、変更があればロングポーリングで画面に反映（手動リロード不要）。
 - **設定は UI からもファイルからも** — 対象フォルダの追加・削除、対象拡張子、除外フォルダ、階層の深さなどを画面上で編集し、JSON 設定ファイルに保存する。
 
@@ -26,6 +32,18 @@
 
 - Python 3.10 以上（3.11 / 3.13 で確認）
 - 依存パッケージは **FastAPI と uvicorn の 2 つだけ**（フロントエンドはビルド不要のバニラ JS + CSS）
+- LaTeX の PDF プレビューを使う場合のみ、TeX エンジンを別途インストール（任意）
+
+```bash
+# 最小構成（英数字の文書）
+sudo apt install texlive-latex-base latexmk        # Debian / Ubuntu
+brew install --cask mactex-no-gui                  # macOS
+
+# 日本語文書（ltjsarticle / jsarticle など）も扱う場合
+sudo apt install texlive-lang-japanese texlive-luatex texlive-latex-extra
+```
+
+エンジンが無い環境でも一覧・検索・HTML プレビューはそのまま動き、`.tex` は「ソースを表示」で中身を確認できます。
 
 ## 起動
 
@@ -90,6 +108,14 @@ python -m hph ~/Documents/html --port 9000 --host 127.0.0.1 --no-browser
 | `watch_interval_seconds` | `4.0` | 自動再スキャン間隔（`0` で無効） |
 | `host` / `port` | `127.0.0.1` / `8765` | 待ち受け先 |
 | `open_browser` | `true` | 起動時にブラウザを開く |
+| `tex_enabled` | `true` | LaTeX の PDF プレビューを使うか |
+| `tex_engine` | `"auto"` | 使用エンジン。`auto` は自動判定、`pdflatex` などで固定 |
+| `tex_use_latexmk` | `true` | latexmk があれば利用する（参照解決の再実行を任せる） |
+| `tex_use_sibling_pdf` | `true` | `.tex` と同じ場所に新しい PDF があればそれを表示する |
+| `tex_max_passes` | `2` | latexmk を使わないときのコンパイル回数 |
+| `tex_timeout_seconds` | `90` | 1 回のコンパイルの上限時間 |
+| `tex_cache_limit` | `200` | 保持する PDF キャッシュの数 |
+| `tex_cache_dir` | 状態ディレクトリ配下 | PDF キャッシュの置き場所 |
 
 お気に入り・非表示フォルダ・履歴は設定とは別に `~/.local/state/html-preview-hub/state.json`
 （`HPH_STATE_DIR` で変更可）に保存されます。
@@ -102,8 +128,9 @@ python -m hph ~/Documents/html --port 9000 --host 127.0.0.1 --no-browser
 | `↑` / `↓` | ファイルを移動（プレビュー画面） |
 | `Enter` | 開く |
 | `Esc` | 一覧へ戻る / 検索解除 |
-| `r` | プレビューを再読み込み |
+| `r` | プレビューを再読み込み（LaTeX は強制再コンパイル） |
 | `u` | ソース表示の切り替え |
+| `l` | コンパイルログの切り替え（LaTeX） |
 | `f` | お気に入り切り替え |
 | `[` | サイドバーの表示切り替え |
 | `,` | 設定を開く |
@@ -125,7 +152,8 @@ html-preview-hub/
 ├── hph/                      # バックエンド（Python パッケージ）
 │   ├── __main__.py           # CLI エントリポイント（python -m hph）
 │   ├── config.py             # 設定の読み書き・ルート管理
-│   ├── scanner.py            # 再帰スキャンとタイトル抽出
+│   ├── scanner.py            # 再帰スキャンとタイトル抽出（HTML / LaTeX）
+│   ├── tex.py                # LaTeX のエンジン判定・コンパイル・キャッシュ
 │   ├── index.py              # インデックス保持・再スキャン・変更通知
 │   ├── store.py              # お気に入り / 非表示 / 履歴の永続化
 │   ├── paths.py              # パス正規化とトラバーサル対策
@@ -140,7 +168,7 @@ html-preview-hub/
 │           ├── util.js       # DOM / 整形ユーティリティ
 │           ├── virtual-list.js  # 固定行高の仮想スクロール
 │           └── views/        # home / tree / preview / settings
-├── sample-docs/              # 動作確認用のサンプル HTML
+├── sample-docs/              # 動作確認用のサンプル（HTML と LaTeX）
 ├── docs/screenshots/         # README 用スクリーンショット
 └── tests/                    # pytest（+ 任意の Playwright E2E）
 ```
@@ -157,6 +185,9 @@ html-preview-hub/
 | `GET` | `/api/browse?path=` | 設定画面のフォルダ選択用ディレクトリ一覧 |
 | `POST` | `/api/user/favorites` `/api/user/hidden` `/api/user/recents` | ユーザー状態の更新 |
 | `GET` | `/api/source?fileId=` | ソース表示用のテキスト取得 |
+| `GET` | `/api/tex/status` | 検出された LaTeX エンジンなどの実行環境 |
+| `POST` | `/api/tex/compile` | `.tex` を PDF へコンパイル（`force` で強制再実行） |
+| `GET` | `/api/tex/pdf?fileId=&v=` | コンパイル済み PDF の配信 |
 | `POST` | `/api/open` | 既定のブラウザで開く |
 | `GET` `HEAD` | `/raw/{rootId}/{path}` | プレビュー本体と相対アセットの配信 |
 
@@ -172,17 +203,25 @@ html-preview-hub/
 - **安全性**: `/raw` は必ずルート配下に解決できたパスだけを返します（`..`・絶対パス・ルート外シンボリックリンクは拒否）。
   既定のバインド先は `127.0.0.1` です。`--host 0.0.0.0` で公開すると、`/api/browse` を含めローカルの
   ファイル情報が同一ネットワークへ露出するため、信頼できるネットワーク以外では避けてください。
+- **LaTeX**: マジックコメント（`% !TEX program = ...`）→ プリアンブル（`luatexja` / `xeCJK` / `jsarticle` など）
+  → 既定順、の優先度でエンジンを選びます。コンパイルは常に `-no-shell-escape` で実行し、`\write18` は使えません。
+  生成物は「ソース内容 + エンジン」のハッシュをキーにキャッシュするため、内容が変わらない限り再コンパイルしません
+  （日本語 lualatex 文書で初回 12 秒 → 2 回目 101ms → キャッシュ 0.4ms）。`\documentclass` の無い断片ファイルは
+  コンパイルせず、その旨とソース表示を案内します。
+- **PDF の表示**: PDF はサンドボックス iframe ではブラウザ内蔵ビューアが無効化されるため、PDF のみ `sandbox` を
+  付けずに表示しています。PDF ビューアは親ページの DOM やストレージへアクセスできないため、分離は保たれます。
 - **エラー処理**: 壊れた HTML はブラウザがそのまま描画し、読めない・消えたファイルはプレビュー領域に
-  エラーカードを出すだけでアプリは動き続けます。設定ファイルや状態ファイルが壊れていても既定値で起動します。
+  エラーカードを出すだけでアプリは動き続けます。LaTeX のコンパイル失敗はエラー箇所を含むログを画面上で確認できます。
+  設定ファイルや状態ファイルが壊れていても既定値で起動します。
 
 ## テスト
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest            # 38 tests
+python -m pytest            # 71 tests
 
 # ブラウザ操作の E2E（任意 / Playwright が必要）
 python -m hph ./sample-docs --port 8899 --no-browser &
 npm install playwright && npx playwright install chromium
-node tests/e2e/app.e2e.js
+node tests/e2e/app.e2e.js   # LaTeX エンジンが無い環境では PDF の検証だけ自動でスキップ
 ```

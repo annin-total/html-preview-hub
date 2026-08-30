@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import mimetypes
 import os
@@ -11,6 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import Body, FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -19,7 +21,10 @@ from fastapi.staticfiles import StaticFiles
 from .config import Config, ConfigError, default_state_dir
 from .index import IndexService
 from .paths import PathAccessError, resolve_within_root
+from .scanner import kind_of
 from .store import UserStore
+from .tex import available_engines, compile_tex, has_dvipdfmx, has_latexmk
+from .tex import cached_pdf as cached_tex_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +42,8 @@ mimetypes.add_type("text/javascript", ".mjs")
 mimetypes.add_type("application/json", ".json")
 mimetypes.add_type("image/svg+xml", ".svg")
 mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("text/plain", ".tex")
+mimetypes.add_type("application/pdf", ".pdf")
 
 
 def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
@@ -56,6 +63,8 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     app.state.config = config
     app.state.index = index
     app.state.store = user_store
+    # 同じファイルへのコンパイル要求が重ならないようにする。
+    tex_locks: dict[str, asyncio.Lock] = {}
 
     # ------------------------------------------------------------------
     # インデックス
@@ -93,6 +102,12 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
             "follow_symlinks": bool,
             "watch_interval_seconds": float,
             "open_browser": bool,
+            "tex_enabled": bool,
+            "tex_engine": str,
+            "tex_use_latexmk": bool,
+            "tex_use_sibling_pdf": bool,
+            "tex_max_passes": int,
+            "tex_timeout_seconds": float,
         }
         try:
             for key, caster in updatable.items():
@@ -181,6 +196,70 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     # ------------------------------------------------------------------
     # ファイル
     # ------------------------------------------------------------------
+    @app.get("/api/tex/status")
+    async def tex_status() -> JSONResponse:
+        """LaTeX の実行環境（利用可能なエンジンなど）を返す。"""
+        engines = await asyncio.to_thread(available_engines)
+        return JSONResponse(
+            {
+                "enabled": config.tex_enabled,
+                "engines": sorted(engines),
+                "latexmk": has_latexmk(),
+                "dvipdfmx": has_dvipdfmx(),
+                "configuredEngine": config.tex_engine,
+            }
+        )
+
+    @app.post("/api/tex/compile")
+    async def tex_compile(payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
+        """`.tex` を PDF へコンパイルし、結果とログを返す。"""
+        file_id = str(payload.get("fileId", ""))
+        entry = index.file(file_id)
+        if entry is None:
+            return _error("ファイルが見つかりません", 404)
+        if kind_of(entry.name) != "tex":
+            return _error("LaTeX ファイルではありません", 400)
+        root = config.root(entry.root_id)
+        if root is None:
+            return _error("ルートが見つかりません", 404)
+        try:
+            path = resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+        except PathAccessError as exc:
+            return _error(exc.message, exc.status_code)
+
+        lock = tex_locks.setdefault(file_id, asyncio.Lock())
+        async with lock:
+            result = await asyncio.to_thread(compile_tex, path, config, force=bool(payload.get("force")))
+        body = result.to_json()
+        if result.status == "ok":
+            body["pdfUrl"] = (
+                f"/api/tex/pdf?fileId={quote(file_id, safe='')}&v={quote(result.fingerprint, safe='')}"
+            )
+        # コンパイル失敗も含めてクライアント側で表示するため、常に 200 で返す。
+        return JSONResponse(body)
+
+    @app.get("/api/tex/pdf")
+    async def tex_pdf(fileId: str = Query(...), v: str = Query(...)) -> Response:
+        """コンパイル済み PDF を返す（プレビューの iframe から参照する）。"""
+        entry = index.file(fileId)
+        if entry is None:
+            return _file_error("ファイルが見つかりません", 404)
+        root = config.root(entry.root_id)
+        if root is None:
+            return _file_error("ルートが見つかりません", 404)
+        try:
+            path = resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+        except PathAccessError as exc:
+            return _file_error(exc.message, exc.status_code)
+        pdf = cached_tex_pdf(path, config, v)
+        if pdf is None:
+            return _file_error("PDF がまだ生成されていません。再コンパイルしてください", 404)
+        return FileResponse(
+            pdf,
+            media_type="application/pdf",
+            headers={"Cache-Control": "no-cache, must-revalidate", "Content-Disposition": "inline"},
+        )
+
     @app.get("/api/source")
     async def get_source(fileId: str = Query(...)) -> JSONResponse:
         entry = index.file(fileId)

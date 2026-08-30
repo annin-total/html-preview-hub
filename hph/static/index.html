@@ -53,6 +53,7 @@
           <kbd class="search__kbd">/</kbd>
         </div>
         <div class="chips" id="sortChips" role="group" aria-label="並び替え"></div>
+        <div class="chips" id="kindChips" role="group" aria-label="種類で絞り込み"></div>
         <button class="chip" id="hiddenChip" type="button" aria-pressed="false"></button>
       </div>
 
@@ -89,6 +90,7 @@
           <button class="chip chip--sm" id="favBtn" type="button" title="お気に入り (f)">★</button>
           <button class="chip chip--sm" id="isolationBtn" type="button" title="サンドボックスの分離レベルを切り替え">分離</button>
           <button class="chip chip--sm" id="sourceBtn" type="button" title="ソース表示 (u)">ソース</button>
+          <button class="chip chip--sm" id="logBtn" type="button" title="コンパイルログ (l)" hidden>ログ</button>
           <button class="chip chip--sm" id="reloadBtn" type="button" title="再読み込み (r)">再読込</button>
           <button class="chip chip--sm" id="externalBtn" type="button" title="既定のブラウザで開く">外部で開く</button>
         </div>
@@ -97,6 +99,8 @@
         <div class="preview__placeholder" id="previewPlaceholder">左の一覧からファイルを選択してください</div>
         <div class="preview__error" id="previewError" hidden></div>
         <pre class="preview__source" id="previewSource" hidden></pre>
+        <pre class="preview__source preview__log" id="previewLog" hidden></pre>
+        <div class="preview__status" id="previewStatus" hidden></div>
       </div>
     </section>
   </main>

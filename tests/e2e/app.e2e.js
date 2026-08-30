@@ -64,7 +64,7 @@ const assert = require('assert');
   assert.equal(await page.locator('.card').count(), before, 'all folders visible again');
 
   // 5. 壊れた HTML でもクラッシュしない
-  await page.fill('#homeSearch', 'broken');
+  await page.fill('#homeSearch', 'broken.html');
   await page.waitForTimeout(300);
   await page.click('.card .card__file');
   await page.waitForTimeout(800);
@@ -83,6 +83,33 @@ const assert = require('assert');
   assert(await page.locator('#previewSource').isVisible(), 'source view should open');
   const src = await page.textContent('#previewSource');
   assert(src.includes('<'), 'source should contain markup');
+
+  // 8. LaTeX: 断片ファイルはコンパイルせずソース表示へ回す
+  await page.goto(`${BASE}/#/`, { waitUntil: 'load' });
+  await page.fill('#homeSearch', 'macros');
+  await page.waitForTimeout(400);
+  if (await page.locator('.card .card__file').count()) {
+    await page.click('.card .card__file');
+    await page.waitForTimeout(1500);
+    assert(await page.locator('#previewError').isVisible(), 'fragment should show a notice');
+    await page.click('#previewError .box__actions .chip:last-child');
+    await page.waitForTimeout(600);
+    assert(await page.locator('#previewSource').isVisible(), 'source should open from the notice');
+  }
+
+  // 9. LaTeX: エンジンがある環境では PDF がプレビューされる
+  const texStatus = await (await page.request.get(base + '/api/tex/status')).json();
+  if (texStatus.engines.length > 0) {
+    await page.goto(`${BASE}/#/`, { waitUntil: 'load' });
+    await page.fill('#homeSearch', 'Bilinear');
+    await page.waitForTimeout(400);
+    await page.click('.card .card__file');
+    await page.locator('#stage iframe[src*="/api/tex/pdf"]:visible').first().waitFor({ timeout: 60000 });
+    assert.equal(await page.locator('#previewError').isVisible(), false, 'tex preview should not error');
+    assert.equal(await page.textContent('#reloadBtn'), '再コンパイル');
+  } else {
+    console.log('（LaTeX エンジンが無いため PDF プレビューの検証はスキップ）');
+  }
 
   console.log('E2E OK / console errors:', errors);
   await browser.close();
