@@ -1,0 +1,15 @@
+{
+  "roots": [
+    { "name": "sample-docs", "path": "./sample-docs" }
+  ],
+  "include_extensions": [".html", ".htm", ".xhtml"],
+  "ignore_dirs": [".git", "node_modules", "__pycache__", ".venv", "dist", "build"],
+  "ignore_globs": [],
+  "max_depth": 16,
+  "max_files": 50000,
+  "follow_symlinks": false,
+  "watch_interval_seconds": 4.0,
+  "host": "127.0.0.1",
+  "port": 8765,
+  "open_browser": true
+}

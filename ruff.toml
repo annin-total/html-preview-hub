@@ -1,0 +1,27 @@
+# 静的解析・整形の設定（親リポジトリの ruff.toml と同じ方針）。
+#   ruff check hph tests / ruff format hph tests
+line-length = 110
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "D", "RUF"]
+ignore = [
+    "ANN401", # **kwargs 等の Any を許す
+    "D203",   # D211 と排他。D211 を採用する
+    "D213",   # D212 と排他。D212 を採用する
+    "D400",   # 日本語 docstring は「。」で終わる
+    "D415",   # 同上
+    "D403",   # 日本語 docstring に英語の大文字化ルールは当たらない
+    "RUF001", # 全角括弧・記号は日本語として意図的に使う
+    "RUF002",
+    "RUF003",
+]
+
+[lint.per-file-ignores]
+# FastAPI の依存性注入（Body/Query）は既定引数で関数を呼ぶ書き方が公式の作法。
+"hph/server.py" = ["B008"]
+# テストは sys.path を調整してから import するため E402 を許す
+"tests/*" = ["E402", "D103", "ANN001"]
+
+[lint.pydocstyle]
+convention = "google"

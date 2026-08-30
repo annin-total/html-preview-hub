@@ -1,0 +1,23 @@
+[project]
+name = "html-preview-hub"
+version = "1.0.0"
+description = "ローカルに散在する HTML ファイルを横断的に一覧・検索・プレビューするローカル Web アプリ"
+requires-python = ">=3.10"
+dependencies = ["fastapi>=0.110", "uvicorn>=0.27"]
+
+[project.scripts]
+html-preview-hub = "hph.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["hph"]
+
+[tool.setuptools.package-data]
+hph = ["static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
