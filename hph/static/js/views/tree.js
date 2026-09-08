@@ -58,7 +58,7 @@ export function createTreeView({ store, dom, onOpenFile }) {
       },
       [
         el('span', { class: 'tree__icon', html: row.file.kind === 'tex' ? TEX_ICON : FILE_ICON }),
-        el('span', { class: 'tree__label', html: highlight(row.file.title || row.file.name, terms) }),
+        el('span', { class: 'tree__label', html: highlight(store.fileLabel(row.file), terms) }),
         store.isFavorite(row.file.id) ? el('span', { class: 'tree__star', text: '★' }) : null,
       ],
     );

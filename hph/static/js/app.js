@@ -4,7 +4,7 @@
 
 import { $, debounce, isTypingTarget, storage } from './util.js';
 import { api } from './api.js';
-import { Store } from './state.js';
+import { LABEL_MODES, Store } from './state.js';
 import { createHomeView } from './views/home.js';
 import { createTreeView } from './views/tree.js';
 import { createPreviewView } from './views/preview.js';
@@ -20,6 +20,8 @@ const dom = {
   brandMeta: $('#brandMeta'),
   favoritesToggle: $('#favoritesToggle'),
   favoritesLabel: $('#favoritesLabel'),
+  labelModeToggle: $('#labelModeToggle'),
+  labelModeLabel: $('#labelModeLabel'),
   settingsBtn: $('#settingsBtn'),
   homeSearch: $('#homeSearch'),
   treeSearch: $('#treeSearch'),
@@ -192,6 +194,17 @@ function notify(message) {
 // ---------------------------------------------------------------------------
 // ヘッダー・共通 UI
 // ---------------------------------------------------------------------------
+/** 現在の表示名モード（未知の値なら既定へ戻す）。 */
+function currentLabelMode() {
+  return LABEL_MODES.find((mode) => mode.id === store.prefs.labelMode) || LABEL_MODES[0];
+}
+
+/** ボタンを押したときに切り替わる先のモード。 */
+function nextLabelMode() {
+  const index = LABEL_MODES.indexOf(currentLabelMode());
+  return LABEL_MODES[(index + 1) % LABEL_MODES.length];
+}
+
 function renderChrome() {
   const stats = store.stats();
   const roots = store.index ? store.index.roots : [];
@@ -202,6 +215,9 @@ function renderChrome() {
   dom.brandMeta.textContent = parts.join(' / ');
   dom.favoritesLabel.textContent = `お気に入り (${store.favorites.size})`;
   dom.favoritesToggle.setAttribute('aria-pressed', String(store.prefs.favoritesOnly));
+  const labelMode = currentLabelMode();
+  dom.labelModeLabel.textContent = labelMode.label;
+  dom.labelModeToggle.title = `一覧の表示名: ${labelMode.label}（クリックで${nextLabelMode().label}に切り替え）`;
   app.dataset.sidebar = store.prefs.sidebarVisible ? 'visible' : 'hidden';
   app.style.setProperty('--sidebar-w', `${store.prefs.sidebarWidth}px`);
 }
@@ -224,6 +240,9 @@ dom.backBtn.addEventListener('click', navigateHome);
 dom.settingsBtn.addEventListener('click', () => settingsView.open(store.index ? store.index.roots : []));
 dom.favoritesToggle.addEventListener('click', () => {
   store.setPref('favoritesOnly', !store.prefs.favoritesOnly);
+});
+dom.labelModeToggle.addEventListener('click', () => {
+  store.setPref('labelMode', nextLabelMode().id);
 });
 
 $('#settingsModal').addEventListener('click', (event) => {

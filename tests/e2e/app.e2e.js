@@ -111,6 +111,26 @@ const assert = require('assert');
     console.log('（LaTeX エンジンが無いため PDF プレビューの検証はスキップ）');
   }
 
+  // 10. 表示名の切り替え（タイトル ⇔ ファイル名）
+  await page.goto(`${BASE}/#/`, { waitUntil: 'load' });
+  await page.fill('#homeSearch', 'components');
+  await page.waitForTimeout(400);
+  assert.equal(await page.textContent('#labelModeLabel'), 'タイトル', '既定はタイトル表示');
+  const asTitle = await page.textContent('.card .card__file span');
+  await page.click('#labelModeToggle');
+  await page.waitForTimeout(300);
+  assert.equal(await page.textContent('#labelModeLabel'), 'ファイル名');
+  const asName = await page.textContent('.card .card__file span');
+  assert.equal(asName, 'components.html', 'カードがファイル名になる: ' + asName);
+  assert.notEqual(asName, asTitle, 'タイトルとファイル名で表示が変わる');
+  // サイドバーにも同じ設定が効く
+  await page.click('.card .card__file');
+  await page.locator('#stage iframe:visible').first().waitFor();
+  assert.equal(await page.textContent('.tree__row.is-active .tree__label'), asName, 'サイドバーもファイル名');
+  await page.click('#labelModeToggle');
+  await page.waitForTimeout(300);
+  assert.equal(await page.textContent('.tree__row.is-active .tree__label'), asTitle, 'サイドバーもタイトルへ戻る');
+
   console.log('E2E OK / console errors:', errors);
   await browser.close();
 })().catch((e) => { console.error('E2E FAILED:', e.message); process.exit(1); });

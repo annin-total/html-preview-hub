@@ -23,9 +23,16 @@ export const KINDS = [
   { id: 'tex', label: 'TeX' },
 ];
 
+/** ファイル一覧に出す表示名の種類。 */
+export const LABEL_MODES = [
+  { id: 'title', label: 'タイトル' },
+  { id: 'name', label: 'ファイル名' },
+];
+
 const DEFAULT_PREFS = {
   sort: SORTS[0].id,
   kind: 'all',
+  labelMode: LABEL_MODES[0].id,
   showHidden: false,
   favoritesOnly: false,
   sidebarWidth: 288,
@@ -129,6 +136,13 @@ export class Store {
 
   file(fileId) {
     return this.filesById.get(fileId) || null;
+  }
+
+  /** 一覧に表示するファイルの見出し（設定に応じてタイトル / ファイル名）。 */
+  fileLabel(file) {
+    if (!file) return '';
+    if (this.prefs.labelMode === 'name') return file.name;
+    return file.title || file.name;
   }
 
   folderOfFile(file) {

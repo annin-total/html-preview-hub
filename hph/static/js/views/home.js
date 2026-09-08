@@ -124,7 +124,7 @@ export function createHomeView({ store, dom, onOpenFile, onOpenFolder, onToggleH
                 },
               },
               [
-                el('span', { html: highlight(file.title || file.name, terms) }),
+                el('span', { html: highlight(store.fileLabel(file), terms) }),
                 file.kind !== 'html' ? el('em', { class: 'kind-badge', text: file.kind }) : null,
               ],
             ),
