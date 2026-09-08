@@ -1,7 +1,8 @@
-"""ファイルシステムのスキャンと HTML タイトル抽出。
+r"""ファイルシステムのスキャンとタイトル抽出。
 
 - ルート配下を再帰的に走査し、対象拡張子のファイルをフォルダ単位でまとめる。
 - タイトル抽出は先頭数十 KB だけを読み、(mtime, size) をキーにキャッシュする。
+- HTML は `<title>` / `<h1>`、LaTeX は `\title` / `\chapter` / `\section` を見る。
 """
 
 from __future__ import annotations
@@ -23,6 +24,26 @@ _META_CHARSET_RE = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([a-zA-Z0-9_\
 _TAG_RE = re.compile(rb"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 
+#: LaTeX として扱う拡張子。
+TEX_EXTENSIONS = frozenset({".tex", ".latex", ".ltx"})
+#: HTML として扱う拡張子。
+HTML_EXTENSIONS = frozenset({".html", ".htm", ".xhtml", ".xht"})
+
+_TEX_COMMENT_RE = re.compile(r"(?<!\\)%.*")
+_TEX_TITLE_COMMANDS = ("title", "chapter", "section", "subsection")
+_TEX_MACRO_RE = re.compile(r"\\[a-zA-Z@]+\s*(\[[^\]]*\])?")
+_TEX_BRACES_RE = re.compile(r"[{}$]")
+
+
+def kind_of(name: str) -> str:
+    """ファイル名から種別（html / tex / other）を判定する。"""
+    suffix = Path(name).suffix.lower()
+    if suffix in TEX_EXTENSIONS:
+        return "tex"
+    if suffix in HTML_EXTENSIONS:
+        return "html"
+    return "other"
+
 
 @dataclass(frozen=True)
 class FileEntry:
@@ -34,6 +55,7 @@ class FileEntry:
     dir: str
     name: str
     title: str
+    kind: str
     size: int
     created_at: float
     updated_at: float
@@ -47,6 +69,7 @@ class FileEntry:
             "dir": self.dir,
             "name": self.name,
             "title": self.title,
+            "kind": self.kind,
             "size": self.size,
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
@@ -135,7 +158,7 @@ def make_folder_id(root_id: str, rel_dir: str) -> str:
 
 
 def extract_title(path: Path, *, limit: int, fallback: str) -> str:
-    """HTML から表示用タイトルを抽出する。失敗してもフォールバックを返す。"""
+    """ファイルの先頭から表示用タイトルを抽出する。失敗してもフォールバックを返す。"""
     try:
         with path.open("rb") as fh:
             head = fh.read(limit)
@@ -143,6 +166,8 @@ def extract_title(path: Path, *, limit: int, fallback: str) -> str:
         return fallback
     if not head:
         return fallback
+    if kind_of(path.name) == "tex":
+        return extract_tex_title(head.decode("utf-8", errors="replace")) or fallback
     encoding = _detect_encoding(head)
     for pattern in (_TITLE_RE, _H1_RE):
         match = pattern.search(head)
@@ -152,6 +177,48 @@ def extract_title(path: Path, *, limit: int, fallback: str) -> str:
         if text:
             return text
     return fallback
+
+
+def extract_tex_title(source: str) -> str:
+    r"""LaTeX ソースから `\\title` → `\\chapter` → `\\section` の順にタイトルを探す。"""
+    body = _TEX_COMMENT_RE.sub("", source)
+    for command in _TEX_TITLE_COMMANDS:
+        for match in re.finditer(rf"\\{command}\s*(?:\[[^\]]*\])?\s*\*?\s*{{", body):
+            argument = _balanced_argument(body, match.end() - 1)
+            text = _clean_tex_text(argument)
+            if text:
+                return text
+    # タイトル系のコマンドが無い場合、先頭のコメント行を見出しとして使う。
+    for line in source.splitlines()[:5]:
+        stripped = line.strip()
+        if stripped.startswith("%") and not stripped.startswith("% !"):
+            text = _clean_tex_text(stripped.lstrip("%"))
+            if text:
+                return text
+    return ""
+
+
+def _balanced_argument(text: str, open_index: int) -> str:
+    """`{` の位置から対応する `}` までを取り出す（入れ子に対応）。"""
+    depth = 0
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if char == "{" and (index == 0 or text[index - 1] != "\\"):
+            depth += 1
+        elif char == "}" and text[index - 1] != "\\":
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1 : index]
+    return text[open_index + 1 :]
+
+
+def _clean_tex_text(raw: str) -> str:
+    """LaTeX の断片から表示用の文字列を作る。"""
+    text = raw.replace("\\\\", " ").replace("~", " ")
+    text = _TEX_MACRO_RE.sub(" ", text)
+    text = _TEX_BRACES_RE.sub("", text)
+    text = text.replace("\\", "")  # `\&` などのエスケープを解く
+    return _WS_RE.sub(" ", text).strip()
 
 
 def _detect_encoding(head: bytes) -> str:
@@ -209,6 +276,7 @@ def scan(config: Config, cache: TitleCache | None = None) -> ScanResult:
                 dir=rel_dir,
                 name=Path(rel_path).name,
                 title=title or fallback,
+                kind=kind_of(rel_path),
                 size=stat.st_size,
                 created_at=_created_at(stat),
                 updated_at=stat.st_mtime,

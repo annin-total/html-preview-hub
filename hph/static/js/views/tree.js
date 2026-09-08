@@ -12,6 +12,8 @@ const FOLDER_ICON =
   '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3.5 6.5A1.5 1.5 0 015 5h3.9l1.6 2H19a1.5 1.5 0 011.5 1.5v9A1.5 1.5 0 0119 19H5a1.5 1.5 0 01-1.5-1.5z"/></svg>';
 const FILE_ICON =
   '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3H7a1.5 1.5 0 00-1.5 1.5v15A1.5 1.5 0 007 21h10a1.5 1.5 0 001.5-1.5V8.5z"/><path d="M13 3v5.5h5.5"/></svg>';
+const TEX_ICON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3H7a1.5 1.5 0 00-1.5 1.5v15A1.5 1.5 0 007 21h10a1.5 1.5 0 001.5-1.5V8.5z"/><path d="M13 3v5.5h5.5"/><path d="M8.6 12.4h4.2M10.7 12.4V17"/></svg>';
 const CARET =
   '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg>';
 
@@ -55,7 +57,7 @@ export function createTreeView({ store, dom, onOpenFile }) {
         onclick: () => onOpenFile(row.file),
       },
       [
-        el('span', { class: 'tree__icon', html: FILE_ICON }),
+        el('span', { class: 'tree__icon', html: row.file.kind === 'tex' ? TEX_ICON : FILE_ICON }),
         el('span', { class: 'tree__label', html: highlight(row.file.title || row.file.name, terms) }),
         store.isFavorite(row.file.id) ? el('span', { class: 'tree__star', text: '★' }) : null,
       ],

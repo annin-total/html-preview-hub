@@ -36,6 +36,8 @@ export const api = {
   toggleHidden: (folderId) => post('/api/user/hidden', { folderId }),
   touchRecent: (fileId) => post('/api/user/recents', { fileId }),
   source: (fileId) => request(`/api/source?fileId=${encodeURIComponent(fileId)}`),
+  texStatus: () => request('/api/tex/status'),
+  texCompile: (fileId, force = false) => post('/api/tex/compile', { fileId, force }),
   openExternally: (fileId) => post('/api/open', { fileId }),
 };
 

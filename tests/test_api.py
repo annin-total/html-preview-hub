@@ -17,7 +17,7 @@ def _index(client: TestClient) -> dict:
 
 def test_index_lists_folders_and_files(client: TestClient) -> None:
     payload = _index(client)
-    assert payload["stats"]["fileCount"] == 3
+    assert payload["stats"]["fileCount"] == 5
     assert {f["name"] for f in payload["folders"]} == {"alpha", "beta"}
     assert payload["roots"][0]["name"] == "docs"
 
@@ -145,3 +145,56 @@ def test_head_request_on_raw_is_allowed(client: TestClient) -> None:
     root_id = _index(client)["roots"][0]["id"]
     response = client.head(f"/raw/{root_id}/alpha/index.html")
     assert response.status_code == 200
+
+
+# ----------------------------------------------------------------------
+# LaTeX
+# ----------------------------------------------------------------------
+def test_index_marks_file_kind(client: TestClient) -> None:
+    kinds = {f["relPath"]: f["kind"] for f in _index(client)["files"]}
+    assert kinds["beta/paper.tex"] == "tex"
+    assert kinds["alpha/index.html"] == "html"
+
+
+def test_tex_status_reports_environment(client: TestClient) -> None:
+    payload = client.get("/api/tex/status").json()
+    assert payload["enabled"] is True
+    assert isinstance(payload["engines"], list)
+    assert payload["configuredEngine"] == "auto"
+
+
+def test_tex_compile_rejects_non_tex_file(client: TestClient) -> None:
+    file_id = next(f["id"] for f in _index(client)["files"] if f["relPath"].endswith(".html"))
+    response = client.post("/api/tex/compile", json={"fileId": file_id})
+    assert response.status_code == 400
+
+
+def test_tex_compile_unknown_file(client: TestClient) -> None:
+    assert client.post("/api/tex/compile", json={"fileId": "x:y.tex"}).status_code == 404
+
+
+def test_tex_fragment_is_reported(client: TestClient) -> None:
+    r"""`\documentclass` が無い断片はコンパイルせず、その旨を返す。"""
+    file_id = next(f["id"] for f in _index(client)["files"] if f["relPath"] == "beta/fragment.tex")
+    payload = client.post("/api/tex/compile", json={"fileId": file_id}).json()
+    assert payload["status"] == "fragment"
+    assert "documentclass" in payload["message"]
+
+
+def test_tex_compile_and_serve_pdf(client: TestClient, install_tex_stub) -> None:
+    install_tex_stub()
+    file_id = next(f["id"] for f in _index(client)["files"] if f["relPath"] == "beta/paper.tex")
+    payload = client.post("/api/tex/compile", json={"fileId": file_id}).json()
+    assert payload["status"] == "ok", payload
+    pdf = client.get(payload["pdfUrl"])
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content.startswith(b"%PDF")
+    # 2 回目はキャッシュから返る
+    assert client.post("/api/tex/compile", json={"fileId": file_id}).json()["cached"] is True
+
+
+def test_tex_pdf_rejects_unknown_fingerprint(client: TestClient) -> None:
+    file_id = next(f["id"] for f in _index(client)["files"] if f["relPath"] == "beta/paper.tex")
+    response = client.get("/api/tex/pdf", params={"fileId": file_id, "v": "../../etc/passwd"})
+    assert response.status_code == 404

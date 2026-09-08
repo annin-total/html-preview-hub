@@ -1,0 +1,33 @@
+% !TEX program = pdflatex
+\documentclass[11pt]{article}
+\usepackage{amsmath, amssymb}
+\usepackage[margin=2.5cm]{geometry}
+
+\title{Attention as a Bilinear Form}
+\author{html-preview-hub sample}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Scaled dot-product attention}
+
+For queries $Q \in \mathbb{R}^{n \times d}$, keys $K \in \mathbb{R}^{m \times d}$ and
+values $V \in \mathbb{R}^{m \times d_v}$,
+\begin{equation}
+  \mathrm{Attention}(Q, K, V) = \mathrm{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d}}\right) V .
+\end{equation}
+
+\section{Why the scaling factor}
+
+If the entries of $q$ and $k$ are independent with zero mean and unit variance, then
+\begin{align}
+  \mathbb{E}[q^{\top} k] &= 0, &
+  \mathrm{Var}(q^{\top} k) &= d ,
+\end{align}
+so dividing by $\sqrt{d}$ keeps the logits at unit scale and prevents the softmax from
+saturating as $d$ grows.
+
+\input{macros}
+
+\end{document}

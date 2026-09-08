@@ -17,8 +17,15 @@ export const SORTS = [
   { id: 'name-asc', label: '名前順', compare: (a, b) => a.name.localeCompare(b.name, 'ja') },
 ];
 
+export const KINDS = [
+  { id: 'all', label: 'すべて' },
+  { id: 'html', label: 'HTML' },
+  { id: 'tex', label: 'TeX' },
+];
+
 const DEFAULT_PREFS = {
   sort: SORTS[0].id,
+  kind: 'all',
   showHidden: false,
   favoritesOnly: false,
   sidebarWidth: 288,
@@ -139,13 +146,17 @@ export class Store {
   /** ホーム画面に出すフォルダ（検索・非表示・お気に入り絞り込み・並び替えを適用）。 */
   visibleFolders() {
     const terms = this.terms;
-    const { showHidden, favoritesOnly } = this.prefs;
+    const { showHidden, favoritesOnly, kind } = this.prefs;
     const result = [];
     for (const folder of this.folders) {
       const hidden = this.hidden.has(folder.id);
       // 「非表示フォルダ」チップは、非表示にしたフォルダだけを見るモード。
       if (showHidden !== hidden) continue;
       let files = folder.files;
+      if (kind !== 'all') {
+        files = files.filter((f) => f.kind === kind);
+        if (files.length === 0) continue;
+      }
       if (favoritesOnly) {
         files = files.filter((f) => this.favorites.has(f.id));
         if (files.length === 0) continue;
@@ -174,19 +185,33 @@ export class Store {
       .slice()
       .sort((a, b) => a.displayPath.localeCompare(b.displayPath, 'ja'));
     for (const folder of folders) {
+      const kindFiltered =
+        this.prefs.kind === 'all'
+          ? folder.files
+          : folder.files.filter((f) => f.kind === this.prefs.kind);
+      if (kindFiltered.length === 0) continue;
       const folderMatches = terms.length
         ? terms.every((t) => folder.displayPath.toLowerCase().includes(t))
         : true;
       const files = terms.length && !folderMatches
-        ? folder.files.filter((f) => terms.every((t) => f.haystack.includes(t)))
-        : folder.files;
+        ? kindFiltered.filter((f) => terms.every((t) => f.haystack.includes(t)))
+        : kindFiltered;
       if (files.length === 0 && !folderMatches) continue;
       const collapsed = this.collapsed.has(folder.id) && terms.length === 0;
-      rows.push({ type: 'folder', id: folder.id, folder, collapsed, count: folder.files.length });
+      rows.push({ type: 'folder', id: folder.id, folder, collapsed, count: kindFiltered.length });
       if (collapsed) continue;
       for (const file of files) rows.push({ type: 'file', id: file.id, file, folder });
     }
     return rows;
+  }
+
+  /** インデックスに含まれるファイル種別ごとの件数。 */
+  kindCounts() {
+    const counts = new Map();
+    for (const file of this.filesById.values()) {
+      counts.set(file.kind, (counts.get(file.kind) || 0) + 1);
+    }
+    return counts;
   }
 
   /** ヘッダー表示用の統計値。 */

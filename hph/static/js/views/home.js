@@ -4,7 +4,7 @@
  */
 
 import { el, formatDate, highlight } from '../util.js';
-import { SORTS } from '../state.js';
+import { KINDS, SORTS } from '../state.js';
 
 const CHUNK_SIZE = 48;
 const MAX_FILES_PER_CARD = 3;
@@ -39,6 +39,28 @@ export function createHomeView({ store, dom, onOpenFile, onOpenFolder, onToggleH
   dom.hiddenChip.addEventListener('click', () => {
     store.setPref('showHidden', !store.prefs.showHidden);
   });
+
+  // 種類チップは、2 種類以上のファイルがあるときだけ出す。
+  function renderKindChips() {
+    const counts = store.kindCounts();
+    const present = KINDS.filter((kind) => kind.id === 'all' || counts.get(kind.id));
+    if (present.length <= 2) {
+      dom.kindChips.replaceChildren();
+      if (store.prefs.kind !== 'all') store.setPref('kind', 'all');
+      return;
+    }
+    dom.kindChips.replaceChildren(
+      ...present.map((kind) =>
+        el('button', {
+          class: 'chip',
+          type: 'button',
+          'aria-pressed': String(store.prefs.kind === kind.id),
+          onclick: () => store.setPref('kind', kind.id),
+          text: kind.id === 'all' ? kind.label : `${kind.label} (${counts.get(kind.id)})`,
+        }),
+      ),
+    );
+  }
 
   function renderHiddenChip() {
     const stats = store.stats();
@@ -101,7 +123,10 @@ export function createHomeView({ store, dom, onOpenFile, onOpenFolder, onToggleH
                   onOpenFile(file);
                 },
               },
-              [el('span', { html: highlight(file.title || file.name, terms) })],
+              [
+                el('span', { html: highlight(file.title || file.name, terms) }),
+                file.kind !== 'html' ? el('em', { class: 'kind-badge', text: file.kind }) : null,
+              ],
             ),
           ),
         ),
@@ -150,6 +175,7 @@ export function createHomeView({ store, dom, onOpenFile, onOpenFolder, onToggleH
     rendered = 0;
     dom.grid.replaceChildren();
     renderSortChips();
+    renderKindChips();
     renderHiddenChip();
     renderEmpty();
     appendChunk();

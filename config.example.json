@@ -2,7 +2,7 @@
   "roots": [
     { "name": "sample-docs", "path": "./sample-docs" }
   ],
-  "include_extensions": [".html", ".htm", ".xhtml"],
+  "include_extensions": [".html", ".htm", ".xhtml", ".tex"],
   "ignore_dirs": [".git", "node_modules", "__pycache__", ".venv", "dist", "build"],
   "ignore_globs": [],
   "max_depth": 16,
@@ -11,5 +11,14 @@
   "watch_interval_seconds": 4.0,
   "host": "127.0.0.1",
   "port": 8765,
-  "open_browser": true
+  "open_browser": true,
+
+  "tex_enabled": true,
+  "tex_engine": "auto",
+  "tex_use_latexmk": true,
+  "tex_use_sibling_pdf": true,
+  "tex_max_passes": 2,
+  "tex_timeout_seconds": 90.0,
+  "tex_cache_limit": 200,
+  "tex_cache_dir": ""
 }
