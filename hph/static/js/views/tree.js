@@ -3,8 +3,8 @@
  * 仮想スクロールで描画するため、数千件でも切り替えが即応する。
  */
 
-import { el, highlight } from '../util.js';
-import { createVirtualList } from '../virtual-list.js';
+import { el, highlight } from "../util.js";
+import { createVirtualList } from "../virtual-list.js";
 
 const ROW_HEIGHT = 30;
 
@@ -30,36 +30,47 @@ export function createTreeView({ store, dom, onOpenFile }) {
   function renderRow(row) {
     if (!row) return null;
     const terms = store.treeTerms;
-    if (row.type === 'folder') {
+    if (row.type === "folder") {
       return el(
-        'div',
+        "div",
         {
-          class: `tree__row tree__row--folder${row.collapsed ? ' is-collapsed' : ''}`,
+          class: `tree__row tree__row--folder${row.collapsed ? " is-collapsed" : ""}`,
           style: `height:${ROW_HEIGHT}px`,
           title: row.folder.displayPath,
           onclick: () => toggleFolder(row.folder.id),
         },
         [
-          el('span', { class: 'tree__caret', html: CARET }),
-          el('span', { class: 'tree__icon', html: FOLDER_ICON }),
-          el('span', { class: 'tree__label', html: highlight(row.folder.displayPath, terms) }),
-          el('span', { class: 'tree__meta', text: String(row.count) }),
+          el("span", { class: "tree__caret", html: CARET }),
+          el("span", { class: "tree__icon", html: FOLDER_ICON }),
+          el("span", {
+            class: "tree__label",
+            html: highlight(row.folder.displayPath, terms),
+          }),
+          el("span", { class: "tree__meta", text: String(row.count) }),
         ],
       );
     }
     const isActive = store.activeFileId === row.file.id;
     return el(
-      'div',
+      "div",
       {
-        class: `tree__row${isActive ? ' is-active' : ''}`,
+        class: `tree__row${isActive ? " is-active" : ""}`,
         style: `height:${ROW_HEIGHT}px;padding-left:26px`,
         title: `${row.folder.displayPath}/${row.file.name}`,
         onclick: () => onOpenFile(row.file),
       },
       [
-        el('span', { class: 'tree__icon', html: row.file.kind === 'tex' ? TEX_ICON : FILE_ICON }),
-        el('span', { class: 'tree__label', html: highlight(row.file.title || row.file.name, terms) }),
-        store.isFavorite(row.file.id) ? el('span', { class: 'tree__star', text: '★' }) : null,
+        el("span", {
+          class: "tree__icon",
+          html: row.file.kind === "tex" ? TEX_ICON : FILE_ICON,
+        }),
+        el("span", {
+          class: "tree__label",
+          html: highlight(store.fileLabel(row.file), terms),
+        }),
+        store.isFavorite(row.file.id)
+          ? el("span", { class: "tree__star", text: "★" })
+          : null,
       ],
     );
   }
@@ -73,8 +84,8 @@ export function createTreeView({ store, dom, onOpenFile }) {
   function render() {
     const rows = store.treeRows();
     list.setRows(rows);
-    const files = rows.filter((row) => row.type === 'file').length;
-    const folders = rows.filter((row) => row.type === 'folder').length;
+    const files = rows.filter((row) => row.type === "file").length;
+    const folders = rows.filter((row) => row.type === "folder").length;
     dom.foot.textContent = `${folders} フォルダ / ${files} ファイル`;
   }
 
@@ -87,17 +98,22 @@ export function createTreeView({ store, dom, onOpenFile }) {
       store.collapsed.delete(folderId);
       render();
     }
-    const index = list.rows.findIndex((row) => row.type === 'file' && row.id === store.activeFileId);
+    const index = list.rows.findIndex(
+      (row) => row.type === "file" && row.id === store.activeFileId,
+    );
     if (index >= 0) list.scrollToIndex(index);
     else list.refresh();
   }
 
   /** 上下キーでの移動。`delta` は行数。 */
   function move(delta) {
-    const fileRows = list.rows.filter((row) => row.type === 'file');
+    const fileRows = list.rows.filter((row) => row.type === "file");
     if (fileRows.length === 0) return null;
     const current = fileRows.findIndex((row) => row.id === store.activeFileId);
-    const next = current < 0 ? 0 : Math.min(fileRows.length - 1, Math.max(0, current + delta));
+    const next =
+      current < 0
+        ? 0
+        : Math.min(fileRows.length - 1, Math.max(0, current + delta));
     return fileRows[next].file;
   }
 

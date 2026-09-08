@@ -1,13 +1,431 @@
+# Comprehensive .gitignore for Python and Node.js projects
+#
+# Sources reviewed 2026-08-08:
+# - https://github.com/github/gitignore
+# - https://github.com/github/gitignore/tree/main/Global
+# - https://www.toptal.com/developers/gitignore
+#
+# Keep dependency lock files committed for reproducible builds.
+# Add framework-specific rules when a project adopts another ecosystem.
+
+###############################################################################
+# Secrets and local configuration
+###############################################################################
+
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.local
+*.local.*
+local/
+*/local/
+secrets/
+*/secrets/
+.secrets/
+*/.secrets/
+credentials/
+*/credentials/
+.credentials/
+*/.credentials/
+.direnv/
+.envrc
+.pypirc
+.npmrc.local
+
+# Local AI/editor configuration
+.claude/settings.local.json
+.ai-config-profile
+
+###############################################################################
+# Logs, diagnostics, runtime data, and temporary files
+###############################################################################
+
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+pids/
+*.pid
+*.pid.lock
+*.seed
+*.stackdump
+nohup.out
+
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+
+###############################################################################
+# Operating systems
+###############################################################################
+
+# macOS
+.DS_Store
+.localized
+__MACOSX/
+.AppleDouble
+.LSOverride
+Icon[ ]
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.com.apple.timemachine.supported
+.PKInstallSandboxManager
+.PKInstallSandboxManager-SystemSoftware
+.hotfiles.btree
+.vol
+.file
+.disk_label*
+lost+found
+.HFS+ Private Directory Data[ ]
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+Desktop DB
+Desktop DF
+TheFindByContentFolder
+TheVolumeSettingsFolder
+.FBCIndex
+.FBCSemaphoreFile
+.FBCLockFolder
+.quota.group
+.quota.user
+.quota.ops.group
+.quota.ops.user
+Backups.backupdb
+.MobileBackups
+.MobileBackups.trash
+MobileBackups.trash
+tmbootpicker.efi
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux and network filesystems
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+###############################################################################
+# Editors and IDEs
+###############################################################################
+
+# Visual Studio Code: retain shareable project configuration
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+!*.code-workspace
+.vscode-test/
+*.vsix
+.history/
+tempCodeRunnerFile.*
+
+# JetBrains IDEs: retain shareable project configuration
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/dictionaries/
+.idea/**/shelf/
+.idea/**/aws.xml
+.idea/**/contentModel.xml
+.idea/**/dataSources/
+.idea/**/dataSources.ids
+.idea/**/dataSources.local.xml
+.idea/**/sqlDataSources.xml
+.idea/**/dynamic.xml
+.idea/**/uiDesigner.xml
+.idea/**/dbnavigator.xml
+.idea/**/gradle.xml
+.idea/**/libraries/
+.idea/**/mongoSettings.xml
+.idea/**/copilot.data.migration.*.xml
+.idea/httpRequests/
+.idea/replstate.xml
+.idea/sonarlint/
+.idea/sonarlint.xml
+.idea/caches/build_file_checksums.ser
+.idea/.cache/
+.idea/ApifoxUploaderProjectSetting.xml
+http-client.private.env.json
+*.iws
+.idea_modules/
+atlassian-ide-plugin.xml
+cmake-build-*/
+
+# Vim
+[._]*.s[a-v][a-z]
+!*.svg
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+Session.vim
+Sessionx.vim
+.netrwhist
+tags
+[._]*.un~
+
+# Emacs
+\#*\#
+.\#*
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list/
+tramp
+.org-id-locations
+*_archive
+*_flymake.*
+/elpa/
+/eshell/history
+/eshell/lastdir
+/transient/
+*.rel
+/repl-history
+
+# Sublime Text
+*.sublime-workspace
+sftp-config.json
+sftp-config-alt*.json
+Package Control.last-run
+Package Control.ca-list
+Package Control.ca-bundle
+Package Control.system-ca-bundle
+Package Control.cache/
+Package Control.ca-certs/
+Package Control.merged-ca-bundle
+Package Control.user-ca-bundle
+oscrypto-ca-bundle.crt
+bh_unicode_properties.cache
+
+###############################################################################
+# Python
+###############################################################################
+
+# Bytecode and native extensions
 __pycache__/
-*.py[cod]
+*.py[codz]
+*$py.class
+*.so
+
+# Packaging and build output
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments and package managers
 .venv/
 venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+__pypackages__/
+.pdm-python
+.pdm-build/
+.pixi/
+
+# Tests, coverage, type checking, and linting
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
 .pytest_cache/
+cover/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Frameworks and tools
+*.mo
+*.pot
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+instance/
+.webassets-cache
+.scrapy/
+docs/_build/
+.pybuilder/
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+celerybeat-schedule
+celerybeat.pid
+*.sage.py
+.spyderproject
+.spyproject
+.ropeproject
+/site/
+cython_debug/
+.abstra/
+marimo/_static/
+marimo/_lsp/
+__marimo__/
+.streamlit/secrets.toml
+
+# Local service state
+*.rdb
+*.aof
+mnesia/
+rabbitmq/
+rabbitmq-data/
+activemq-data/
+
+###############################################################################
+# Node.js, JavaScript, and TypeScript
+###############################################################################
+
+# Dependencies and package-manager state
+node_modules/
+jspm_packages/
+bower_components/
+web_modules/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.yarn-integrity
+.pnpm-store/
+.npm/
+
+# Build and test output
+lib-cov/
+coverage/
+*.lcov
+.nyc_output/
+.grunt/
+.lock-wscript
+build/Release/
+*.tsbuildinfo
+*.tgz
+.eslintcache
+.stylelintcache
+.node_repl_history
+
+# Bundlers and frameworks
+.parcel-cache/
+.next/
+out/
+.nuxt/
+.output/
+.svelte-kit/
+.vuepress/dist/
+.temp/
+**/.vitepress/dist/
+**/.vitepress/cache/
+.docusaurus/
+.serverless/
+.fusebox/
+.dynamodb/
+.firebase/
+.tern-port
+.vite/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+###############################################################################
+# Common generated project artifacts
+###############################################################################
+
+# Tool caches
+.turbo/
+.nx/
+.rollup.cache/
+.sass-cache/
+
+# Infrastructure tooling
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+
+# Ad-hoc local files
+pr-body.md
+.superpowers/
+
+# 個人設定
+*.py[cod]
 config.json
 state.json
-*.egg-info/
-dist/
-build/
-.DS_Store
-
-.ruff_cache/
+sample-docs/tex/nginxbestpractices2026.tex

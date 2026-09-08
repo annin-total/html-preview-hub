@@ -80,3 +80,19 @@ def test_max_files_truncates(config: Config) -> None:
     result = scan(config)
     assert result.truncated is True
     assert len(result.files) == 1
+
+
+def test_nested_roots_do_not_duplicate_the_same_path(config: Config, tree: Path) -> None:
+    """ルートが入れ子でも同じ絶対パスは 1 件だけになる（先のルートを採用）。"""
+    config.add_root(tree / "alpha", "alpha")
+    result = scan(config)
+    rel_paths = sorted(file.rel_path for file in result.files)
+    assert rel_paths == [
+        "alpha/index.html",
+        "alpha/no-title.html",
+        "beta/broken.html",
+        "beta/fragment.tex",
+        "beta/paper.tex",
+    ]
+    assert all(file.root_id == config.roots[0].id for file in result.files)
+    assert len(result.folders) == 2

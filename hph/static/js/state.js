@@ -6,31 +6,54 @@
  *   走査コストを最小化する（数千件でもインクリメンタルサーチが止まらない）。
  */
 
-import { storage } from './util.js';
+import { storage } from "./util.js";
 
-const PREF_KEY = 'hph.prefs.v1';
+const PREF_KEY = "hph.prefs.v1";
 
 export const SORTS = [
-  { id: 'created-desc', label: '作成日が新しい順', compare: (a, b) => b.createdAt - a.createdAt },
-  { id: 'created-asc', label: '作成日が古い順', compare: (a, b) => a.createdAt - b.createdAt },
-  { id: 'updated-desc', label: '更新が新しい順', compare: (a, b) => b.updatedAt - a.updatedAt },
-  { id: 'name-asc', label: '名前順', compare: (a, b) => a.name.localeCompare(b.name, 'ja') },
+  {
+    id: "created-desc",
+    label: "作成日が新しい順",
+    compare: (a, b) => b.createdAt - a.createdAt,
+  },
+  {
+    id: "created-asc",
+    label: "作成日が古い順",
+    compare: (a, b) => a.createdAt - b.createdAt,
+  },
+  {
+    id: "updated-desc",
+    label: "更新が新しい順",
+    compare: (a, b) => b.updatedAt - a.updatedAt,
+  },
+  {
+    id: "name-asc",
+    label: "名前順",
+    compare: (a, b) => a.name.localeCompare(b.name, "ja"),
+  },
 ];
 
 export const KINDS = [
-  { id: 'all', label: 'すべて' },
-  { id: 'html', label: 'HTML' },
-  { id: 'tex', label: 'TeX' },
+  { id: "all", label: "すべて" },
+  { id: "html", label: "HTML" },
+  { id: "tex", label: "TeX" },
+];
+
+/** ファイル一覧に出す表示名の種類。 */
+export const LABEL_MODES = [
+  { id: "title", label: "タイトル" },
+  { id: "name", label: "ファイル名" },
 ];
 
 const DEFAULT_PREFS = {
   sort: SORTS[0].id,
-  kind: 'all',
+  kind: "all",
+  labelMode: LABEL_MODES[0].id,
   showHidden: false,
   favoritesOnly: false,
   sidebarWidth: 288,
   sidebarVisible: true,
-  isolation: 'strict',
+  isolation: "strict",
   lastFileId: null,
 };
 
@@ -44,8 +67,8 @@ export class Store {
     this.favorites = new Set();
     this.hidden = new Set();
     this.recents = [];
-    this.query = '';
-    this.treeQuery = '';
+    this.query = "";
+    this.treeQuery = "";
     this.collapsed = new Set();
     this.activeFileId = null;
     this.listeners = new Set();
@@ -67,7 +90,7 @@ export class Store {
     if (this.prefs[key] === value) return;
     this.prefs[key] = value;
     storage.set(PREF_KEY, this.prefs);
-    this.emit('prefs');
+    this.emit("prefs");
   }
 
   // ----------------------------------------------------------------
@@ -92,18 +115,23 @@ export class Store {
 
     this.foldersById = new Map();
     this.folders = payload.folders.map((folder) => {
-      const files = folder.fileIds.map((id) => this.filesById.get(id)).filter(Boolean);
+      const files = folder.fileIds
+        .map((id) => this.filesById.get(id))
+        .filter(Boolean);
       files.sort((a, b) => b.updatedAt - a.updatedAt);
       const enriched = {
         ...folder,
         files,
-        displayPath: folder.relPath ? `${folder.rootName}/${folder.relPath}` : folder.rootName,
+        displayPath: folder.relPath
+          ? `${folder.rootName}/${folder.relPath}`
+          : folder.rootName,
       };
-      enriched.haystack = `${enriched.displayPath}\n${files.map((f) => f.haystack).join('\n')}`.toLowerCase();
+      enriched.haystack =
+        `${enriched.displayPath}\n${files.map((f) => f.haystack).join("\n")}`.toLowerCase();
       this.foldersById.set(folder.id, enriched);
       return enriched;
     });
-    this.emit('index');
+    this.emit("index");
   }
 
   applyUserState(patch) {
@@ -111,7 +139,7 @@ export class Store {
     if (patch.favorites) this.favorites = new Set(patch.favorites);
     if (patch.hiddenFolders) this.hidden = new Set(patch.hiddenFolders);
     if (patch.recents) this.recents = patch.recents.slice();
-    this.emit('user');
+    this.emit("user");
   }
 
   // ----------------------------------------------------------------
@@ -131,8 +159,17 @@ export class Store {
     return this.filesById.get(fileId) || null;
   }
 
+  /** 一覧に表示するファイルの見出し（設定に応じてタイトル / ファイル名）。 */
+  fileLabel(file) {
+    if (!file) return "";
+    if (this.prefs.labelMode === "name") return file.name;
+    return file.title || file.name;
+  }
+
   folderOfFile(file) {
-    return file ? this.foldersById.get(`${file.rootId}:${file.dir}`) || null : null;
+    return file
+      ? this.foldersById.get(`${file.rootId}:${file.dir}`) || null
+      : null;
   }
 
   isFavorite(fileId) {
@@ -153,7 +190,7 @@ export class Store {
       // 「非表示フォルダ」チップは、非表示にしたフォルダだけを見るモード。
       if (showHidden !== hidden) continue;
       let files = folder.files;
-      if (kind !== 'all') {
+      if (kind !== "all") {
         files = files.filter((f) => f.kind === kind);
         if (files.length === 0) continue;
       }
@@ -162,8 +199,12 @@ export class Store {
         if (files.length === 0) continue;
       }
       if (terms.length) {
-        const folderMatches = terms.every((t) => folder.displayPath.toLowerCase().includes(t));
-        const matched = files.filter((f) => terms.every((t) => f.haystack.includes(t)));
+        const folderMatches = terms.every((t) =>
+          folder.displayPath.toLowerCase().includes(t),
+        );
+        const matched = files.filter((f) =>
+          terms.every((t) => f.haystack.includes(t)),
+        );
         if (!folderMatches && matched.length === 0) continue;
         if (matched.length) {
           const rest = files.filter((f) => !matched.includes(f));
@@ -183,24 +224,34 @@ export class Store {
     const folders = this.folders
       .filter((folder) => !this.hidden.has(folder.id) || this.prefs.showHidden)
       .slice()
-      .sort((a, b) => a.displayPath.localeCompare(b.displayPath, 'ja'));
+      .sort((a, b) => a.displayPath.localeCompare(b.displayPath, "ja"));
     for (const folder of folders) {
       const kindFiltered =
-        this.prefs.kind === 'all'
+        this.prefs.kind === "all"
           ? folder.files
           : folder.files.filter((f) => f.kind === this.prefs.kind);
       if (kindFiltered.length === 0) continue;
       const folderMatches = terms.length
         ? terms.every((t) => folder.displayPath.toLowerCase().includes(t))
         : true;
-      const files = terms.length && !folderMatches
-        ? kindFiltered.filter((f) => terms.every((t) => f.haystack.includes(t)))
-        : kindFiltered;
+      const files =
+        terms.length && !folderMatches
+          ? kindFiltered.filter((f) =>
+              terms.every((t) => f.haystack.includes(t)),
+            )
+          : kindFiltered;
       if (files.length === 0 && !folderMatches) continue;
       const collapsed = this.collapsed.has(folder.id) && terms.length === 0;
-      rows.push({ type: 'folder', id: folder.id, folder, collapsed, count: kindFiltered.length });
+      rows.push({
+        type: "folder",
+        id: folder.id,
+        folder,
+        collapsed,
+        count: kindFiltered.length,
+      });
       if (collapsed) continue;
-      for (const file of files) rows.push({ type: 'file', id: file.id, file, folder });
+      for (const file of files)
+        rows.push({ type: "file", id: file.id, file, folder });
     }
     return rows;
   }
@@ -216,7 +267,8 @@ export class Store {
 
   /** ヘッダー表示用の統計値。 */
   stats() {
-    if (!this.index) return { folders: 0, files: 0, hidden: 0, roots: 0, truncated: false };
+    if (!this.index)
+      return { folders: 0, files: 0, hidden: 0, roots: 0, truncated: false };
     const hidden = this.folders.filter((f) => this.hidden.has(f.id)).length;
     return {
       folders: this.folders.length - hidden,

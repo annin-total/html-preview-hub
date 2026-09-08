@@ -16,7 +16,7 @@ build-backend = "setuptools.build_meta"
 packages = ["hph"]
 
 [tool.setuptools.package-data]
-hph = ["static/**/*"]
+hph = ["static/**/*", "*.lua"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
