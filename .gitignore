@@ -425,9 +425,7 @@ pr-body.md
 .superpowers/
 
 # 個人設定
-
 *.py[cod]
 config.json
 state.json
-
 sample-docs/tex/nginxbestpractices2026.tex
