@@ -10,8 +10,16 @@ from pathlib import Path
 
 import pytest
 
+from conftest import WRITE_PDF
+
 from hph.config import Config
-from hph.tex import ENGINES, choose_engine, compile_tex
+from hph.tex import (
+    ENGINES,
+    _can_use_font_fallback,
+    choose_engine,
+    compile_tex,
+    fingerprint_for,
+)
 
 
 @pytest.fixture()
@@ -202,3 +210,57 @@ def test_partial_pdf_from_failed_run_is_not_reported_as_ok(tmp_path: Path, insta
     assert "Fatal error occurred" in result.log
     # 壊れた PDF はキャッシュに残さない（次回それを返してしまわないように）。
     assert not (Path(config.tex_cache_dir) / result.fingerprint / "doc.pdf").exists()
+
+
+def test_nonzero_exit_with_complete_pdf_is_success(tmp_path: Path, install_tex_stub) -> None:
+    """補助ツールの失敗でエンジンが非ゼロ終了しても、PDF が完成していれば成功扱いにする。"""
+    install_tex_stub(body=f"{WRITE_PDF}\nexit 12", log="makeindex: gave an error\\n")
+    config = Config.from_dict({"tex_cache_dir": str(tmp_path / "cache")})
+    config.tex_use_latexmk = False
+    config.tex_max_passes = 1
+    result = compile_tex(_write_tex(tmp_path / "doc.tex"), config)
+    assert result.status == "ok"
+    assert "補助処理" in result.message
+    assert result.pdf_path is not None and result.pdf_path.is_file()
+
+
+def test_failed_compile_clears_output_directory(tmp_path: Path, install_tex_stub) -> None:
+    """失敗したら中間ファイルごと捨てる（壊れた .aux を次回に持ち越さない）。"""
+    install_tex_stub(body='printf broken > "$out/$stem.aux"\nexit 1')
+    config = Config.from_dict({"tex_cache_dir": str(tmp_path / "cache")})
+    config.tex_use_latexmk = False
+    config.tex_max_passes = 1
+    result = compile_tex(_write_tex(tmp_path / "doc.tex"), config)
+    assert result.status == "error"
+    assert not (Path(config.tex_cache_dir) / result.fingerprint).exists()
+
+
+def test_recovers_from_broken_previous_output(tmp_path: Path, install_tex_stub) -> None:
+    """前回の壊れた生成物が残っていても、捨ててやり直すので 1 回で成功する。"""
+    # 「前回の .aux が残っていると失敗する」= 壊れた aux を読んで落ちる挙動の模擬。
+    install_tex_stub(body=f'if [ -f "$out/$stem.aux" ]; then exit 1; fi\n{WRITE_PDF}')
+    config = Config.from_dict({"tex_cache_dir": str(tmp_path / "cache")})
+    config.tex_use_latexmk = False
+    config.tex_max_passes = 1
+    tex = _write_tex(tmp_path / "doc.tex")
+
+    stale = Path(config.tex_cache_dir) / fingerprint_for(tex.read_bytes(), "pdflatex")
+    stale.mkdir(parents=True)
+    (stale / "doc.aux").write_text("壊れた前回の残骸", encoding="utf-8")
+
+    result = compile_tex(tex, config)
+    assert result.status == "ok", result.message
+    assert result.pdf_path is not None and result.pdf_path.is_file()
+
+
+def test_font_fallback_is_skipped_for_unsafe_names(tmp_path: Path) -> None:
+    r"""`\input{}` に安全に埋め込めないファイル名では、フォント代替を試みない。"""
+    config = Config.from_dict({})
+    lua = ENGINES["lualatex"]
+    assert _can_use_font_fallback(lua, tmp_path / "report.tex", config) is True
+    assert _can_use_font_fallback(lua, tmp_path / "my report.tex", config) is False
+    assert _can_use_font_fallback(lua, tmp_path / "a#b.tex", config) is False
+    # LuaTeX 以外では \directlua が使えない
+    assert _can_use_font_fallback(ENGINES["pdflatex"], tmp_path / "report.tex", config) is False
+    config.tex_font_fallback = False
+    assert _can_use_font_fallback(lua, tmp_path / "report.tex", config) is False

@@ -47,6 +47,7 @@ cp config.example.json config.json
 | `tex_engine` | `"auto"` | 使用エンジン。`auto` は自動判定、`pdflatex` などで固定 |
 | `tex_use_latexmk` | `true` | latexmk があれば利用する（参照解決の再実行を任せる） |
 | `tex_use_sibling_pdf` | `true` | `.tex` と同じ場所に新しい PDF があればそれを表示する |
+| `tex_font_fallback` | `true` | この環境に無いフォントを要求して失敗したとき、TeX Live 同梱のフォント（Harano Aji など）へ読み替えて一度だけやり直す（LuaTeX のみ） |
 | `tex_max_passes` | `2` | latexmk を使わないときのコンパイル回数 |
 | `tex_timeout_seconds` | `180` | 1 回のコンパイルの上限時間 |
 | `tex_cache_limit` | `200` | 保持する PDF キャッシュの数 |

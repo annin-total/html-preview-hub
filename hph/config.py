@@ -53,6 +53,7 @@ DEFAULTS: dict[str, Any] = {
     "tex_engine": "auto",
     "tex_use_latexmk": True,
     "tex_use_sibling_pdf": True,
+    "tex_font_fallback": True,
     "tex_max_passes": 2,
     "tex_timeout_seconds": 180.0,
     "tex_cache_limit": 200,
@@ -138,6 +139,7 @@ class Config:
     tex_engine: str = DEFAULTS["tex_engine"]
     tex_use_latexmk: bool = DEFAULTS["tex_use_latexmk"]
     tex_use_sibling_pdf: bool = DEFAULTS["tex_use_sibling_pdf"]
+    tex_font_fallback: bool = DEFAULTS["tex_font_fallback"]
     tex_max_passes: int = DEFAULTS["tex_max_passes"]
     tex_timeout_seconds: float = DEFAULTS["tex_timeout_seconds"]
     tex_cache_limit: int = DEFAULTS["tex_cache_limit"]
@@ -195,6 +197,7 @@ class Config:
             tex_engine=str(merged["tex_engine"]).strip() or "auto",
             tex_use_latexmk=bool(merged["tex_use_latexmk"]),
             tex_use_sibling_pdf=bool(merged["tex_use_sibling_pdf"]),
+            tex_font_fallback=bool(merged["tex_font_fallback"]),
             tex_max_passes=max(1, int(merged["tex_max_passes"])),
             tex_timeout_seconds=max(5.0, float(merged["tex_timeout_seconds"])),
             tex_cache_limit=max(1, int(merged["tex_cache_limit"])),
