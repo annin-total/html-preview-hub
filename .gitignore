@@ -11,4 +11,4 @@ build/
 .DS_Store
 
 .ruff_cache/
-sample-docs/tex/clouddeployhostingguide.tex
+sample-docs/tex/nginxbestpractices2026.tex

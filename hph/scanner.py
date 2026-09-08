@@ -247,6 +247,9 @@ def scan(config: Config, cache: TitleCache | None = None) -> ScanResult:
     folders: dict[str, FolderEntry] = {}
     errors: list[dict[str, str]] = []
     live_paths: set[str] = set()
+    # ルートが入れ子になっていると同じ実ファイルを複数回拾うため、絶対パスで重複を排除する
+    # （先に走査したルート側を採用する）。
+    seen_paths: set[str] = set()
     extensions = tuple(config.include_extensions)
     truncated = False
 
@@ -261,12 +264,16 @@ def scan(config: Config, cache: TitleCache | None = None) -> ScanResult:
             path, rel_path, stat = entry
             if not rel_path.lower().endswith(extensions):
                 continue
-            live_paths.add(str(path))
+            abs_path = str(path)
+            if abs_path in seen_paths:
+                continue
+            seen_paths.add(abs_path)
+            live_paths.add(abs_path)
             fallback = Path(rel_path).stem
-            title = cache.get(str(path), stat.st_mtime, stat.st_size)
+            title = cache.get(abs_path, stat.st_mtime, stat.st_size)
             if title is None:
                 title = extract_title(path, limit=config.title_scan_bytes, fallback=fallback)
-                cache.set(str(path), stat.st_mtime, stat.st_size, title)
+                cache.set(abs_path, stat.st_mtime, stat.st_size, title)
             rel_dir = str(Path(rel_path).parent.as_posix())
             rel_dir = "" if rel_dir == "." else rel_dir
             file_entry = FileEntry(

@@ -1,9 +1,14 @@
 {
-  "roots": [
-    { "name": "sample-docs", "path": "./sample-docs" }
-  ],
+  "roots": [{ "name": "sample-docs", "path": "./sample-docs" }],
   "include_extensions": [".html", ".htm", ".xhtml", ".tex"],
-  "ignore_dirs": [".git", "node_modules", "__pycache__", ".venv", "dist", "build"],
+  "ignore_dirs": [
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "dist",
+    "build"
+  ],
   "ignore_globs": [],
   "max_depth": 16,
   "max_files": 50000,
