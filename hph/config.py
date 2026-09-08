@@ -54,7 +54,7 @@ DEFAULTS: dict[str, Any] = {
     "tex_use_latexmk": True,
     "tex_use_sibling_pdf": True,
     "tex_max_passes": 2,
-    "tex_timeout_seconds": 90.0,
+    "tex_timeout_seconds": 180.0,
     "tex_cache_limit": 200,
     "tex_cache_dir": "",
 }

@@ -186,3 +186,19 @@ def test_cache_is_pruned(tmp_path: Path, tex_config: Config) -> None:
         compile_tex(tex, tex_config)
     cached = list((Path(tex_config.tex_cache_dir)).iterdir())
     assert len(cached) <= 2
+
+
+def test_partial_pdf_from_failed_run_is_not_reported_as_ok(tmp_path: Path, install_tex_stub) -> None:
+    """異常終了したエンジンが書きかけの PDF を残しても、成功として返さない。"""
+    install_tex_stub(
+        body='printf "%%PDF-1.4\\nbroken" > "$out/$stem.pdf"\nexit 1',
+        log="./doc.listing:1:  ==> Fatal error occurred, no output PDF file produced!\\n",
+    )
+    config = Config.from_dict({"tex_cache_dir": str(tmp_path / "cache")})
+    config.tex_use_latexmk = False
+    config.tex_max_passes = 1
+    result = compile_tex(_write_tex(tmp_path / "doc.tex"), config)
+    assert result.status == "error"
+    assert "Fatal error occurred" in result.log
+    # 壊れた PDF はキャッシュに残さない（次回それを返してしまわないように）。
+    assert not (Path(config.tex_cache_dir) / result.fingerprint / "doc.pdf").exists()

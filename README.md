@@ -113,7 +113,7 @@ python -m hph ~/Documents/html --port 9000 --host 127.0.0.1 --no-browser
 | `tex_use_latexmk` | `true` | latexmk があれば利用する（参照解決の再実行を任せる） |
 | `tex_use_sibling_pdf` | `true` | `.tex` と同じ場所に新しい PDF があればそれを表示する |
 | `tex_max_passes` | `2` | latexmk を使わないときのコンパイル回数 |
-| `tex_timeout_seconds` | `90` | 1 回のコンパイルの上限時間 |
+| `tex_timeout_seconds` | `180` | 1 回のコンパイルの上限時間 |
 | `tex_cache_limit` | `200` | 保持する PDF キャッシュの数 |
 | `tex_cache_dir` | 状態ディレクトリ配下 | PDF キャッシュの置き場所 |
 

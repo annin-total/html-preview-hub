@@ -248,15 +248,20 @@ def compile_tex(path: Path, config: Config, *, force: bool = False) -> CompileRe
             fingerprint=fingerprint,
         )
 
+    if force:
+        # latexmk は前回の .fdb_latexmk を見て「更新不要」と判断するため、作り直す。
+        shutil.rmtree(out_dir, ignore_errors=True)
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         return CompileResult(status="error", message=f"キャッシュディレクトリを作れません: {exc}")
 
     log_parts: list[str] = []
+    failed = False
     for command in _build_commands(engine, path, out_dir, config):
         completed = _run(command, cwd=path.parent, timeout=config.tex_timeout_seconds)
         if completed is None:
+            _discard_pdf(pdf_path)
             return CompileResult(
                 status="error",
                 engine=engine.name,
@@ -265,15 +270,21 @@ def compile_tex(path: Path, config: Config, *, force: bool = False) -> CompileRe
                 duration_ms=(time.perf_counter() - started) * 1000,
                 fingerprint=fingerprint,
             )
-        log_parts.append(completed)
+        returncode, output = completed
+        log_parts.append(output)
+        if returncode != 0:
+            # エンジンが異常終了した場合、書きかけの壊れた PDF が残ることがある。
+            failed = True
+            break
 
     log = _read_log(out_dir / f"{path.stem}.log") or "\n".join(log_parts)
     duration = (time.perf_counter() - started) * 1000
-    if not pdf_path.is_file():
+    if failed or not pdf_path.is_file():
+        _discard_pdf(pdf_path)
         return CompileResult(
             status="error",
             engine=engine.name,
-            message="PDF を生成できませんでした",
+            message="PDF を生成できませんでした（コンパイルが失敗しました）",
             log=_tail(log),
             duration_ms=duration,
             fingerprint=fingerprint,
@@ -352,8 +363,8 @@ def _build_commands(engine: Engine, tex: Path, out_dir: Path, config: Config) ->
     return [[engine.command, *common, name] for _ in range(config.tex_max_passes)]
 
 
-def _run(command: list[str], *, cwd: Path, timeout: float) -> str | None:
-    """コマンドを実行し、標準出力＋標準エラーを返す。タイムアウト時は None。"""
+def _run(command: list[str], *, cwd: Path, timeout: float) -> tuple[int, str] | None:
+    """コマンドを実行し、(終了コード, 標準出力＋標準エラー) を返す。タイムアウト時は None。"""
     # 対象ディレクトリの外へ書き出さない／シェルエスケープを使わせない。
     env = {**os.environ, "openout_any": "p", "shell_escape": "f"}
     try:
@@ -369,8 +380,16 @@ def _run(command: list[str], *, cwd: Path, timeout: float) -> str | None:
     except subprocess.TimeoutExpired:
         return None
     except OSError as exc:
-        return f"{command[0]}: {exc}"
-    return (completed.stdout + completed.stderr).decode("utf-8", errors="replace")
+        return 1, f"{command[0]}: {exc}"
+    return completed.returncode, (completed.stdout + completed.stderr).decode("utf-8", errors="replace")
+
+
+def _discard_pdf(pdf_path: Path) -> None:
+    """失敗時に残った不完全な PDF を消す（次回それをキャッシュとして返さないため）。"""
+    try:
+        pdf_path.unlink(missing_ok=True)
+    except OSError:  # pragma: no cover - 消せなくても致命的ではない
+        pass
 
 
 def _read_log(log_path: Path) -> str:
@@ -385,7 +404,7 @@ def _tail(text: str, lines: int = LOG_TAIL_LINES) -> str:
     """ログの末尾だけを返す。エラー行があればその周辺を優先する。"""
     rows = text.splitlines()
     for index, row in enumerate(rows):
-        if row.startswith("!") or (":" in row and re.match(r"^.+\.tex:\d+:", row)):
+        if row.startswith("!") or "Fatal error occurred" in row or re.match(r"^.+\.[A-Za-z]+:\d+:", row):
             return "\n".join(rows[max(0, index - 5) : index + lines])
     return "\n".join(rows[-lines:])
 
