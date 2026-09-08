@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
+from conftest import WRITE_PDF
 from fastapi.testclient import TestClient
 
 from hph.config import Config
@@ -156,6 +158,39 @@ def test_index_marks_file_kind(client: TestClient) -> None:
     assert kinds["alpha/index.html"] == "html"
 
 
+# ----------------------------------------------------------------------
+# LaTeX
+# ----------------------------------------------------------------------
+def _tex_file_id(client: TestClient) -> str:
+    return next(f["id"] for f in _index(client)["files"] if f["relPath"] == "beta/paper.tex")
+
+
+def _install_stub_engines(install_tex_stub, **kwargs) -> None:
+    """自動選択がどのエンジンを選んでもスタブが使われるようにする。"""
+    for name in ("pdflatex", "lualatex", "xelatex"):
+        install_tex_stub(name, **kwargs)
+
+
+def _poll_job(client: TestClient, file_id: str, timeout: float = 15.0) -> dict:
+    """running が終わるまで `/api/tex/job` をポーリングする。"""
+    deadline = time.monotonic() + timeout
+    payload: dict = {}
+    while time.monotonic() < deadline:
+        response = client.get("/api/tex/job", params={"fileId": file_id})
+        assert response.status_code == 200
+        payload = response.json()
+        if payload["status"] != "running":
+            return payload
+        time.sleep(0.1)
+    raise AssertionError(f"ジョブが時間内に終わりませんでした: {payload}")
+
+
+def _finish_compile(client: TestClient, file_id: str, *, force: bool = False) -> dict:
+    """コンパイルを開始し、完了状態まで進めて返す。"""
+    payload = client.post("/api/tex/compile", json={"fileId": file_id, "force": force}).json()
+    return _poll_job(client, file_id) if payload["status"] == "running" else payload
+
+
 def test_tex_status_reports_environment(client: TestClient) -> None:
     payload = client.get("/api/tex/status").json()
     assert payload["enabled"] is True
@@ -182,19 +217,66 @@ def test_tex_fragment_is_reported(client: TestClient) -> None:
 
 
 def test_tex_compile_and_serve_pdf(client: TestClient, install_tex_stub) -> None:
-    install_tex_stub()
-    file_id = next(f["id"] for f in _index(client)["files"] if f["relPath"] == "beta/paper.tex")
-    payload = client.post("/api/tex/compile", json={"fileId": file_id}).json()
+    _install_stub_engines(install_tex_stub)
+    file_id = _tex_file_id(client)
+    payload = _finish_compile(client, file_id)
     assert payload["status"] == "ok", payload
     pdf = client.get(payload["pdfUrl"])
     assert pdf.status_code == 200
     assert pdf.headers["content-type"] == "application/pdf"
     assert pdf.content.startswith(b"%PDF")
     # 2 回目はキャッシュから返る
-    assert client.post("/api/tex/compile", json={"fileId": file_id}).json()["cached"] is True
+    assert _finish_compile(client, file_id)["cached"] is True
 
 
 def test_tex_pdf_rejects_unknown_fingerprint(client: TestClient) -> None:
     file_id = next(f["id"] for f in _index(client)["files"] if f["relPath"] == "beta/paper.tex")
     response = client.get("/api/tex/pdf", params={"fileId": file_id, "v": "../../etc/passwd"})
     assert response.status_code == 404
+
+
+# ----------------------------------------------------------------------
+# LaTeX のバックグラウンド実行
+# ----------------------------------------------------------------------
+def test_tex_compile_runs_in_background(client: TestClient, install_tex_stub) -> None:
+    """時間のかかるコンパイルは running で即座に返り、ジョブ API で結果を受け取れる。"""
+    _install_stub_engines(install_tex_stub, body=f"sleep 1\n{WRITE_PDF}")
+    file_id = _tex_file_id(client)
+    started = time.monotonic()
+    payload = client.post("/api/tex/compile", json={"fileId": file_id}).json()
+    assert payload["status"] == "running", payload
+    assert time.monotonic() - started < 1.0  # 完了を待たずに返っている
+    done = _poll_job(client, file_id)
+    assert done["status"] == "ok", done
+    assert client.get(done["pdfUrl"]).content.startswith(b"%PDF")
+
+
+def test_compile_does_not_block_other_requests(client: TestClient, install_tex_stub) -> None:
+    """コンパイル中でも、他のファイルの配信やソース取得は待たされない。"""
+    _install_stub_engines(install_tex_stub, body=f"sleep 2\n{WRITE_PDF}")
+    file_id = _tex_file_id(client)
+    assert client.post("/api/tex/compile", json={"fileId": file_id}).json()["status"] == "running"
+    root_id = _index(client)["roots"][0]["id"]
+    started = time.monotonic()
+    assert client.get(f"/raw/{root_id}/alpha/index.html").status_code == 200
+    assert client.get("/api/source", params={"fileId": file_id}).status_code == 200
+    assert time.monotonic() - started < 1.0
+    assert _poll_job(client, file_id)["status"] == "ok"
+
+
+def test_repeated_compile_shares_running_job(
+    client: TestClient, install_tex_stub, tmp_path: Path
+) -> None:
+    """実行中に同じファイルの要求が重なっても、エンジンは 1 回しか動かさない。"""
+    counter = tmp_path / "runs.txt"
+    _install_stub_engines(install_tex_stub, body=f'printf x >> "{counter}"\nsleep 1\n{WRITE_PDF}')
+    file_id = _tex_file_id(client)
+    first = client.post("/api/tex/compile", json={"fileId": file_id}).json()
+    second = client.post("/api/tex/compile", json={"fileId": file_id}).json()
+    assert first["status"] == "running" and second["status"] == "running"
+    assert _poll_job(client, file_id)["status"] == "ok"
+    assert counter.read_text() == "x"
+
+
+def test_tex_job_unknown_file(client: TestClient) -> None:
+    assert client.get("/api/tex/job", params={"fileId": "x:y.tex"}).status_code == 404

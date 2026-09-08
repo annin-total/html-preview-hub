@@ -23,8 +23,9 @@ from .index import IndexService
 from .paths import PathAccessError, resolve_within_root
 from .scanner import kind_of
 from .store import UserStore
-from .tex import available_engines, compile_tex, has_dvipdfmx, has_latexmk
+from .tex import available_engines, has_dvipdfmx, has_latexmk
 from .tex import cached_pdf as cached_tex_pdf
+from .texjobs import TexJob, TexJobRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -51,20 +52,23 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     user_store = store or UserStore(default_state_dir())
     index = IndexService(config, user_store)
 
+    # LaTeX のコンパイルはバックグラウンドで走らせ、ファイルを切り替えても中断しない。
+    tex_jobs = TexJobRegistry()
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await index.start()
         try:
             yield
         finally:
+            await tex_jobs.shutdown()
             await index.stop()
 
     app = FastAPI(title="html-preview-hub", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.config = config
     app.state.index = index
     app.state.store = user_store
-    # 同じファイルへのコンパイル要求が重ならないようにする。
-    tex_locks: dict[str, asyncio.Lock] = {}
+    app.state.tex_jobs = tex_jobs
 
     # ------------------------------------------------------------------
     # インデックス
@@ -212,7 +216,11 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
 
     @app.post("/api/tex/compile")
     async def tex_compile(payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
-        """`.tex` を PDF へコンパイルし、結果とログを返す。"""
+        """`.tex` のコンパイルを開始し、その時点の状態を返す（完了は待たない）。
+
+        すぐ終わるもの（キャッシュ済みなど）は 1 往復で結果まで返し、時間がかかる
+        ものは `status: "running"` を返す。続きは `/api/tex/job` で受け取る。
+        """
         file_id = str(payload.get("fileId", ""))
         entry = index.file(file_id)
         if entry is None:
@@ -227,16 +235,17 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
         except PathAccessError as exc:
             return _error(exc.message, exc.status_code)
 
-        lock = tex_locks.setdefault(file_id, asyncio.Lock())
-        async with lock:
-            result = await asyncio.to_thread(compile_tex, path, config, force=bool(payload.get("force")))
-        body = result.to_json()
-        if result.status == "ok":
-            body["pdfUrl"] = (
-                f"/api/tex/pdf?fileId={quote(file_id, safe='')}&v={quote(result.fingerprint, safe='')}"
-            )
-        # コンパイル失敗も含めてクライアント側で表示するため、常に 200 で返す。
-        return JSONResponse(body)
+        job = tex_jobs.submit(file_id, path, config, force=bool(payload.get("force")))
+        await tex_jobs.settle(job)
+        return JSONResponse(_tex_job_body(file_id, job))
+
+    @app.get("/api/tex/job")
+    async def tex_job(fileId: str = Query(...)) -> JSONResponse:
+        """バックグラウンドで走っているコンパイルの状態を返す。"""
+        job = tex_jobs.get(fileId)
+        if job is None:
+            return _error("コンパイルの記録がありません。もう一度開いてください", 404)
+        return JSONResponse(_tex_job_body(fileId, job))
 
     @app.get("/api/tex/pdf")
     async def tex_pdf(fileId: str = Query(...), v: str = Query(...)) -> Response:
@@ -333,6 +342,17 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
 # ----------------------------------------------------------------------
 # ヘルパー
 # ----------------------------------------------------------------------
+def _tex_job_body(file_id: str, job: TexJob) -> dict[str, Any]:
+    """ジョブの状態を API レスポンス用の辞書へ変換し、成功時は PDF の URL を添える。"""
+    body = job.to_json()
+    if body.get("status") == "ok":
+        fingerprint = str(body.get("fingerprint", ""))
+        body["pdfUrl"] = (
+            f"/api/tex/pdf?fileId={quote(file_id, safe='')}&v={quote(fingerprint, safe='')}"
+        )
+    return body
+
+
 def _serve(config: Config, root_id: str, rel_path: str) -> Response:
     root = config.root(root_id)
     if root is None:

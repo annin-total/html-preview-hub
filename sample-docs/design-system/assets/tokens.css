@@ -1,4 +1,21 @@
-body { font-family: system-ui, sans-serif; margin: 0; padding: 40px; background: #fbfaf7; color: #23211e; }
-h1 { font-size: 20px; }
-.swatches { display: flex; gap: 12px; margin: 24px 0; }
-.swatch { width: 64px; height: 64px; border-radius: 10px; border: 1px solid #e6e2d9; }
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  padding: 40px;
+  background: #fbfaf7;
+  color: #23211e;
+}
+h1 {
+  font-size: 20px;
+}
+.swatches {
+  display: flex;
+  gap: 12px;
+  margin: 24px 0;
+}
+.swatch {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  border: 1px solid #e6e2d9;
+}

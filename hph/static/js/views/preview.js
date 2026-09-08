@@ -9,30 +9,44 @@
  * - 一度開いたファイルは iframe プールに残し、再訪時の再読み込みを避ける。
  */
 
-import { el, formatBytes, formatDateTime } from '../util.js';
-import { rawUrl } from '../api.js';
+import { el, formatBytes, formatDateTime } from "../util.js";
+import { rawUrl } from "../api.js";
 
 const POOL_LIMIT = 6;
 const SANDBOX_BASE =
-  'allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-popups-to-escape-sandbox';
+  "allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-popups-to-escape-sandbox";
+/** バックグラウンドのコンパイル状況を問い合わせる間隔（ミリ秒）。 */
+const TEX_POLL_INTERVAL = 900;
 
-export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify }) {
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export function createPreviewView({
+  store,
+  dom,
+  api,
+  onToggleFavorite,
+  onNotify,
+}) {
   /** fileId → { frame, url } */
   const pool = new Map();
   let current = null;
   let cacheBuster = 0;
-  let lastLog = '';
+  let lastLog = "";
+  /** open() ごとに進む世代番号。古い非同期処理が画面を書き換えるのを防ぐ。 */
+  let session = 0;
 
   function sandboxValue() {
-    return store.prefs.isolation === 'compat' ? `${SANDBOX_BASE} allow-same-origin` : SANDBOX_BASE;
+    return store.prefs.isolation === "compat"
+      ? `${SANDBOX_BASE} allow-same-origin`
+      : SANDBOX_BASE;
   }
 
   function createFrame(file, url, { sandboxed }) {
-    const frame = el('iframe', {
+    const frame = el("iframe", {
       src: url,
       sandbox: sandboxed ? sandboxValue() : null,
-      referrerpolicy: 'no-referrer',
-      loading: 'eager',
+      referrerpolicy: "no-referrer",
+      loading: "eager",
       title: file.relPath,
     });
     dom.stage.append(frame);
@@ -48,7 +62,7 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
   }
 
   function hideAll() {
-    for (const entry of pool.values()) entry.frame.style.display = 'none';
+    for (const entry of pool.values()) entry.frame.style.display = "none";
   }
 
   function dropFromPool(fileId) {
@@ -63,7 +77,7 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
   function showCached(file, url) {
     const cached = pool.get(file.id);
     if (!cached || cached.url !== url) return false;
-    cached.frame.style.display = '';
+    cached.frame.style.display = "";
     pool.delete(file.id);
     pool.set(file.id, cached);
     hideError();
@@ -74,8 +88,8 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
     if (showCached(file, url)) return;
     dropFromPool(file.id);
     const frame = createFrame(file, url, { sandboxed });
-    frame.addEventListener('error', () =>
-      showError('プレビューの読み込みに失敗しました', file.relPath),
+    frame.addEventListener("error", () =>
+      showError("プレビューの読み込みに失敗しました", file.relPath),
     );
     pool.set(file.id, { frame, url });
     evict();
@@ -86,7 +100,7 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
   // 表示状態
   // ------------------------------------------------------------------
   function showStatus(message) {
-    dom.status.replaceChildren(el('div', { class: 'box', text: message }));
+    dom.status.replaceChildren(el("div", { class: "box", text: message }));
     dom.status.hidden = false;
   }
 
@@ -94,33 +108,33 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
     dom.status.hidden = true;
   }
 
-  function showError(title, detail, { log = '', sourceOf = null } = {}) {
+  function showError(title, detail, { log = "", sourceOf = null } = {}) {
     const actions = [];
     if (log) {
       actions.push(
-        el('button', {
-          class: 'chip chip--sm',
-          type: 'button',
-          text: 'ログを表示',
+        el("button", {
+          class: "chip chip--sm",
+          type: "button",
+          text: "ログを表示",
           onclick: () => toggleLog(true),
         }),
       );
     }
     if (sourceOf) {
       actions.push(
-        el('button', {
-          class: 'chip chip--sm',
-          type: 'button',
-          text: 'ソースを表示',
+        el("button", {
+          class: "chip chip--sm",
+          type: "button",
+          text: "ソースを表示",
           onclick: () => showSource(sourceOf),
         }),
       );
     }
     dom.error.replaceChildren(
-      el('div', { class: 'box' }, [
-        el('h3', { text: title }),
-        detail ? el('p', { text: detail }) : null,
-        actions.length ? el('div', { class: 'box__actions' }, actions) : null,
+      el("div", { class: "box" }, [
+        el("h3", { text: title }),
+        detail ? el("p", { text: detail }) : null,
+        actions.length ? el("div", { class: "box__actions" }, actions) : null,
       ]),
     );
     dom.error.hidden = false;
@@ -132,7 +146,7 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
 
   function toggleLog(force) {
     const show = force === undefined ? dom.log.hidden : force;
-    dom.log.textContent = lastLog || 'ログはありません';
+    dom.log.textContent = lastLog || "ログはありません";
     dom.log.hidden = !show;
     if (show) dom.source.hidden = true;
   }
@@ -144,16 +158,16 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
 
   function renderCrumbs(file) {
     const folder = store.folderOfFile(file);
-    const parts = folder ? folder.displayPath.split('/') : [];
+    const parts = folder ? folder.displayPath.split("/") : [];
     const nodes = [];
     parts.forEach((part) => {
-      nodes.push(el('span', { text: part }));
-      nodes.push(el('span', { class: 'sep', text: '/' }));
+      nodes.push(el("span", { text: part }));
+      nodes.push(el("span", { class: "sep", text: "/" }));
     });
-    nodes.push(el('b', { text: file.name }));
+    nodes.push(el("b", { text: file.name }));
     nodes.push(
-      el('span', {
-        class: 'sep',
+      el("span", {
+        class: "sep",
         text: `· ${formatBytes(file.size)} · ${formatDateTime(file.updatedAt)}`,
       }),
     );
@@ -161,78 +175,104 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
   }
 
   function syncActions(file) {
-    const isTex = file.kind === 'tex';
-    dom.favBtn.classList.toggle('is-on', store.isFavorite(file.id));
+    const isTex = file.kind === "tex";
+    dom.favBtn.classList.toggle("is-on", store.isFavorite(file.id));
     dom.isolationBtn.hidden = isTex; // PDF 表示では分離モードの切り替えは意味を持たない
-    dom.isolationBtn.textContent = store.prefs.isolation === 'compat' ? '互換' : '分離';
+    dom.isolationBtn.textContent =
+      store.prefs.isolation === "compat" ? "互換" : "分離";
     dom.isolationBtn.title =
-      store.prefs.isolation === 'compat'
-        ? '互換モード: localStorage 等を許可（分離レベルは下がります）'
-        : '分離モード: アプリ本体と完全に分離（localStorage 等は使えません）';
-    dom.reloadBtn.textContent = isTex ? '再コンパイル' : '再読込';
-    dom.reloadBtn.title = isTex ? '強制的に再コンパイルする (r)' : 'プレビューを再読み込み (r)';
+      store.prefs.isolation === "compat"
+        ? "互換モード: localStorage 等を許可（分離レベルは下がります）"
+        : "分離モード: アプリ本体と完全に分離（localStorage 等は使えません）";
+    dom.reloadBtn.textContent = isTex ? "再コンパイル" : "再読込";
+    dom.reloadBtn.title = isTex
+      ? "強制的に再コンパイルする (r)"
+      : "プレビューを再読み込み (r)";
     syncLogButton();
   }
 
   // ------------------------------------------------------------------
   // HTML / LaTeX それぞれの表示
   // ------------------------------------------------------------------
-  /** 実際に読み込めるかを事前に確認し、失敗理由を画面に出す。 */
-  async function verify(file, url) {
+  /** 実際に読み込めるかを事前に確認する。読めれば null、駄目なら理由を返す。 */
+  async function probe(url) {
     try {
-      const response = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-      if (!response.ok) {
-        showError(
-          'プレビューを表示できません',
-          `${response.status} ${response.statusText} — ${file.relPath}`,
-        );
-        return false;
-      }
+      const response = await fetch(url, { method: "HEAD", cache: "no-store" });
+      return response.ok ? null : `${response.status} ${response.statusText}`;
     } catch (error) {
-      showError('プレビューを表示できません', String(error));
-      return false;
+      return String(error);
     }
-    hideError();
-    return true;
   }
 
-  async function openHtml(file) {
-    const url = `${rawUrl(file)}${cacheBuster ? `&t=${cacheBuster}` : ''}`;
+  async function openHtml(file, token) {
+    const url = `${rawUrl(file)}${cacheBuster ? `&t=${cacheBuster}` : ""}`;
     hideAll();
     if (showCached(file, url)) return;
-    if (!(await verify(file, url))) return;
-    if (current !== file) return; // 検証中に別ファイルへ切り替わった
+    const failure = await probe(url);
+    if (token !== session) return; // 検証中に別ファイルへ切り替わった
+    if (failure) {
+      showError("プレビューを表示できません", `${failure} — ${file.relPath}`);
+      return;
+    }
+    hideError();
     showFrame(file, url, { sandboxed: true });
   }
 
-  async function openTex(file, { force = false } = {}) {
+  /**
+   * コンパイルの完了を待つ。サーバー側はバックグラウンドで走り続けるため、
+   * ここでは状態をポーリングするだけで、待っている間も他の操作を妨げない。
+   * 別のファイルへ切り替わったら null を返して画面には触れない。
+   */
+  async function awaitCompile(file, token, force, label) {
+    let result = await api.texCompile(file.id, force);
+    while (result.status === "running") {
+      if (token !== session) return null;
+      showStatus(`${label}（${Math.round((result.elapsedMs || 0) / 1000)} 秒）`);
+      await sleep(TEX_POLL_INTERVAL);
+      if (token !== session) return null;
+      result = await api.texJob(file.id);
+    }
+    return result;
+  }
+
+  async function openTex(file, token, { force = false } = {}) {
     hideAll();
-    showStatus(force ? 'LaTeX を再コンパイルしています…' : 'LaTeX をコンパイルしています…');
+    const label = force
+      ? "LaTeX を再コンパイルしています…"
+      : "LaTeX をコンパイルしています…";
+    showStatus(label);
     let result;
     try {
-      result = await api.texCompile(file.id, force);
+      result = await awaitCompile(file, token, force, label);
     } catch (error) {
+      if (token !== session) return;
       hideStatus();
-      showError('コンパイルを実行できません', String(error.message || error));
+      showError("コンパイルを実行できません", String(error.message || error));
       return;
     }
-    if (current !== file) return;
+    if (result === null || token !== session) return;
     hideStatus();
-    lastLog = result.log || '';
+    lastLog = result.log || "";
     syncLogButton();
 
-    if (result.status === 'unavailable' || result.status === 'fragment') {
+    if (result.status === "unavailable" || result.status === "fragment") {
       const title =
-        result.status === 'fragment' ? '単体ではコンパイルできません' : 'PDF プレビューを利用できません';
+        result.status === "fragment"
+          ? "単体ではコンパイルできません"
+          : "PDF プレビューを利用できません";
       showError(title, result.message, { log: result.log, sourceOf: file });
       return;
     }
-    if (result.status !== 'ok') {
+    if (result.status !== "ok") {
       dropFromPool(file.id);
-      showError('コンパイルに失敗しました', result.message || 'ログを確認してください', {
-        log: result.log,
-        sourceOf: file,
-      });
+      showError(
+        "コンパイルに失敗しました",
+        result.message || "ログを確認してください",
+        {
+          log: result.log,
+          sourceOf: file,
+        },
+      );
       return;
     }
     if (result.message) onNotify(result.message);
@@ -244,7 +284,8 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
   async function showSource(file) {
     try {
       const payload = await api.source(file.id);
-      dom.source.textContent = payload.text + (payload.truncated ? '\n\n… (以降は省略)' : '');
+      dom.source.textContent =
+        payload.text + (payload.truncated ? "\n\n… (以降は省略)" : "");
       dom.log.hidden = true;
       dom.source.hidden = false;
     } catch (error) {
@@ -255,21 +296,24 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
   // ------------------------------------------------------------------
   async function open(file, options = {}) {
     if (!file) return;
+    // 世代を進めて、進行中のコンパイル待ちが画面を書き換えないようにする。
+    const token = ++session;
     current = file;
     store.activeFileId = file.id;
     dom.placeholder.hidden = true;
     dom.source.hidden = true;
     dom.log.hidden = true;
-    lastLog = '';
+    hideStatus(); // 前のファイルの「コンパイル中」表示を必ず消す
+    lastLog = "";
     renderCrumbs(file);
     syncActions(file);
-    if (file.kind === 'tex') await openTex(file, options);
-    else await openHtml(file);
+    if (file.kind === "tex") await openTex(file, token, options);
+    else await openHtml(file, token);
   }
 
   function reload() {
     if (!current) return;
-    if (current.kind === 'tex') {
+    if (current.kind === "tex") {
       dropFromPool(current.id);
       open(current, { force: true });
       return;
@@ -277,16 +321,18 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
     cacheBuster = Date.now();
     dropFromPool(current.id);
     open(current);
-    onNotify('再読み込みしました');
+    onNotify("再読み込みしました");
   }
 
   function toggleIsolation() {
-    const next = store.prefs.isolation === 'compat' ? 'strict' : 'compat';
-    store.setPref('isolation', next);
+    const next = store.prefs.isolation === "compat" ? "strict" : "compat";
+    store.setPref("isolation", next);
     for (const entry of pool.values()) entry.frame.remove();
     pool.clear();
     if (current) open(current);
-    onNotify(next === 'compat' ? '互換モードで表示します' : '分離モードで表示します');
+    onNotify(
+      next === "compat" ? "互換モードで表示します" : "分離モードで表示します",
+    );
   }
 
   async function toggleSource() {
@@ -302,7 +348,7 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
     if (!current) return;
     try {
       await api.openExternally(current.id);
-      onNotify('既定のブラウザで開きました');
+      onNotify("既定のブラウザで開きました");
     } catch (error) {
       onNotify(`開けませんでした: ${error.message}`);
     }
@@ -313,10 +359,11 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
     if (!current) return;
     const latest = store.file(current.id);
     if (!latest) {
-      showError('ファイルが削除されました', current.relPath);
+      showError("ファイルが削除されました", current.relPath);
       return;
     }
-    const changed = latest.updatedAt !== current.updatedAt || latest.size !== current.size;
+    const changed =
+      latest.updatedAt !== current.updatedAt || latest.size !== current.size;
     current = latest;
     if (changed) {
       dropFromPool(latest.id);
@@ -326,12 +373,15 @@ export function createPreviewView({ store, dom, api, onToggleFavorite, onNotify 
     }
   }
 
-  dom.favBtn.addEventListener('click', () => current && onToggleFavorite(current));
-  dom.reloadBtn.addEventListener('click', reload);
-  dom.sourceBtn.addEventListener('click', toggleSource);
-  dom.externalBtn.addEventListener('click', openExternally);
-  dom.isolationBtn.addEventListener('click', toggleIsolation);
-  dom.logBtn.addEventListener('click', () => toggleLog());
+  dom.favBtn.addEventListener(
+    "click",
+    () => current && onToggleFavorite(current),
+  );
+  dom.reloadBtn.addEventListener("click", reload);
+  dom.sourceBtn.addEventListener("click", toggleSource);
+  dom.externalBtn.addEventListener("click", openExternally);
+  dom.isolationBtn.addEventListener("click", toggleIsolation);
+  dom.logBtn.addEventListener("click", () => toggleLog());
 
   return {
     open,

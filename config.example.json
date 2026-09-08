@@ -23,7 +23,7 @@
   "tex_use_latexmk": true,
   "tex_use_sibling_pdf": true,
   "tex_max_passes": 2,
-  "tex_timeout_seconds": 180.0,
+  "tex_timeout_seconds": 360.0,
   "tex_cache_limit": 200,
   "tex_cache_dir": ""
 }

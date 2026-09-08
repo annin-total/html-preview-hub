@@ -7,6 +7,7 @@ r"""LaTeX ファイルの解析と PDF へのコンパイル。
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import re
@@ -386,10 +387,8 @@ def _run(command: list[str], *, cwd: Path, timeout: float) -> tuple[int, str] | 
 
 def _discard_pdf(pdf_path: Path) -> None:
     """失敗時に残った不完全な PDF を消す（次回それをキャッシュとして返さないため）。"""
-    try:
+    with contextlib.suppress(OSError):  # pragma: no cover - 消せなくても致命的ではない
         pdf_path.unlink(missing_ok=True)
-    except OSError:  # pragma: no cover - 消せなくても致命的ではない
-        pass
 
 
 def _read_log(log_path: Path) -> str:

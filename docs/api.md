@@ -16,7 +16,8 @@ html-preview-hub の HTTP API は、フロントエンド（SPA）が使うた�
 | `POST` | `/api/user/favorites` `/api/user/hidden` `/api/user/recents` | ユーザー状態の更新 |
 | `GET` | `/api/source?fileId=` | ソース表示用のテキスト取得 |
 | `GET` | `/api/tex/status` | 検出された LaTeX エンジンなどの実行環境 |
-| `POST` | `/api/tex/compile` | `.tex` を PDF へコンパイル（`force` で強制再実行） |
+| `POST` | `/api/tex/compile` | `.tex` のコンパイルを開始（`force` で強制再実行）。完了は待たない |
+| `GET` | `/api/tex/job?fileId=` | バックグラウンドで走っているコンパイルの状態 |
 | `GET` | `/api/tex/pdf?fileId=&v=` | コンパイル済み PDF の配信 |
 | `POST` | `/api/open` | 既定のブラウザで開く |
 | `GET` `HEAD` | `/raw/{rootId}/{path}` | プレビュー本体と相対アセットの配信 |
@@ -58,7 +59,10 @@ JSON を返す API のエラーは `{"error": メッセージ}` を該当ステ�
 
 - `GET /api/source?fileId=` — ファイルの中身をテキストとして返します（先頭 2MB まで、`truncated` で切り詰めの有無を通知）。
 - `GET /api/tex/status` — 検出済みの LaTeX エンジン一覧、`latexmk` / `dvipdfmx` の有無、設定上のエンジンを返します。
-- `POST /api/tex/compile` — `fileId` の `.tex` を PDF にコンパイルします。`force: true` でキャッシュを無視して再実行します。成功時は結果に `pdfUrl`（`/api/tex/pdf` への参照）を含みます。失敗時もクライアントで表示できるようステータス `200` でログ等を返します。
+- `POST /api/tex/compile` — `fileId` の `.tex` のコンパイルを**開始**し、その時点の状態を返します（`force: true` でキャッシュを無視して再実行）。コンパイルはバックグラウンドで走るため、呼び出しはすぐ返ります。キャッシュ済みなど短時間で終わるものはそのまま結果まで返し、時間がかかるものは `{"status": "running", "elapsedMs": ...}` を返します。
+- `GET /api/tex/job?fileId=` — 走っているコンパイルの状態を返します。`status` が `running` の間は`elapsedMs`（経過時間）を、終わっていれば `/api/tex/compile` と同じ完了結果を返します。記録が無い場合は `404` です。
+  - 完了状態は `ok` / `error` / `fragment` / `unavailable` のいずれかで、成功時は `pdfUrl`（`/api/tex/pdf` への参照）を含みます。失敗もクライアントで表示できるようステータス `200` でログ等を返します。
+  - 同じファイルへの要求が実行中に重なった場合は 1 本のジョブに相乗りします。異なるファイルどうしは並列に走ります（同時実行数には上限があります）。
 - `GET /api/tex/pdf?fileId=&v=` — `v`（コンパイル結果のフィンガープリント）に対応するキャッシュ済み PDF を配信します。未生成の場合は再コンパイルを促すエラーになります。
 
 ## ファイル配信

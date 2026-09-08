@@ -2,7 +2,15 @@
  * 固定行高の仮想スクロールリスト。
  * 表示範囲の行だけを DOM に置くことで、数千行でもスクロールが軽い。
  */
-export function createVirtualList({ scroller, viewport, spacer, rowsHost, rowHeight, overscan = 8, renderRow }) {
+export function createVirtualList({
+  scroller,
+  viewport,
+  spacer,
+  rowsHost,
+  rowHeight,
+  overscan = 8,
+  renderRow,
+}) {
   let rows = [];
   let firstRendered = -1;
   let lastRendered = -1;
@@ -27,7 +35,7 @@ export function createVirtualList({ scroller, viewport, spacer, rowsHost, rowHei
     rowsHost.replaceChildren(fragment);
   }
 
-  scroller.addEventListener('scroll', () => render(), { passive: true });
+  scroller.addEventListener("scroll", () => render(), { passive: true });
   const observer = new ResizeObserver(() => render(true));
   observer.observe(scroller);
 
