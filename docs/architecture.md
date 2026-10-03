@@ -35,7 +35,8 @@ html-preview-hub/
 │   ├── index.py              # インデックス保持・再スキャン・変更通知
 │   ├── store.py              # お気に入り / 非表示 / 履歴の永続化
 │   ├── paths.py              # パス正規化とトラバーサル対策
-│   ├── server.py             # FastAPI ルーティングとファイル配信
+│   ├── server.py             # FastAPI ルーティング
+│   ├── rawfiles.py           # /raw のファイル配信（MIME 判定・エラーページ）
 │   └── static/               # フロントエンド（ビルド不要）
 │       ├── index.html        # SPA シェル
 │       ├── css/app.css       # デザイントークンとコンポーネント
@@ -65,7 +66,8 @@ html-preview-hub/
 | `index.py` | スキャン結果のスナップショット保持、バックグラウンド再スキャン、変更のロングポーリング通知 |
 | `store.py` | お気に入り / 非表示フォルダ / 最近開いたファイルの永続化（スレッドセーフな KVS） |
 | `paths.py` | URL 由来の相対パスの正規化とディレクトリトラバーサル対策 |
-| `server.py` | FastAPI のルーティング定義、`/raw` によるファイル配信、静的アセットの提供 |
+| `server.py` | FastAPI のルーティング定義、静的アセットの提供 |
+| `rawfiles.py` | `/raw` によるファイル配信（ディレクトリの index 解決・MIME 判定・iframe 用のエラーページ） |
 | `static/js/*` | SPA のルーティング・状態管理・検索・各画面（home / tree / preview / settings）の描画 |
 
 ## 3. 処理フロー
@@ -73,7 +75,7 @@ html-preview-hub/
 1. **起動**: `python -m hph` が `Config.load()` で設定ファイルを読み込み、CLI 引数を上書きします。続いて `instance.probe()` でポートを調べ、html-preview-hub が起動済みならブラウザでその画面を開いて終了し、別のアプリが使用中ならエラー終了します。空いていれば `create_app()` に渡して uvicorn でサーバーを起動します。ブラウザは、別スレッドで `/api/health` が応答するまで待ってから開きます（初回スキャンが終わるまでサーバーは待ち受けを始めないため）。
 2. **初回スキャン**: FastAPI の `lifespan` から `IndexService.start()` が呼ばれ、`scanner.scan()` を別スレッド（`asyncio.to_thread`）で実行してスナップショットを作ります。
 3. **インデックス保持と変更検知**: スナップショットは `IndexService` がメモリ上に保持し、内容が変わるとリビジョン番号を進めます。`watch_interval_seconds` が正の値なら、バックグラウンドタスクが一定間隔で再スキャンを実行します。フロントエンドは `GET /api/index/watch?revision=N` へロングポーリングし、リビジョンが進む（またはタイムアウトする）まで応答を待つことで手動リロード無しの自動追従を実現しています。
-4. **プレビュー要求**: フロントエンドが `GET /raw/{rootId}/{path}` を叩くと、`paths.resolve_within_root()` でルート配下の実パスに解決したうえで `server.py` がファイルを配信します。相対パス参照はそのまま解決され、ルート絶対パス（例 `/assets/app.css`）は `Referer` ヘッダーから元のルートを推測して救済します。
+4. **プレビュー要求**: フロントエンドが `GET /raw/{rootId}/{path}` を叩くと、`paths.resolve_within_root()` でルート配下の実パスに解決したうえで `rawfiles.py` がファイルを配信します。相対パス参照はそのまま解決され、ルート絶対パス（例 `/assets/app.css`）は `Referer` ヘッダーから元のルートを推測して救済します。
 5. **LaTeX プレビュー**: `.tex` を開くと `POST /api/tex/compile` が呼ばれ、`texjobs.TexJobRegistry` がバックグラウンドジョブを起動します。呼び出しは完了を待たずに返り、フロントエンドは `GET /api/tex/job` で状態をポーリングします。コンパイル本体は `tex.compile_tex()` が別スレッドで実行し、エンジンを判定したうえで生成物をソース内容とエンジン名のハッシュ（fingerprint）でキャッシュします。完了したらフロントエンドは `pdfUrl`（`GET /api/tex/pdf`）を iframe に読み込みます。ジョブはファイル単位で、同じファイルへの要求が重なると 1 本に相乗りします。異なるファイルどうしはセマフォの範囲で並列に走り、待っている間も他のファイルの表示・操作は妨げられません。
 
 ## 4. 主要な設計判断
