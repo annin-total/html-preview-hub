@@ -20,8 +20,11 @@ ENV_CONFIG = "HPH_CONFIG"
 ENV_ROOTS = "HPH_ROOTS"
 ENV_STATE_DIR = "HPH_STATE_DIR"
 
-#: 既定で走査しないフォルダ名（`exclude` の既定値になる）。
-DEFAULT_IGNORED_DIRS = (
+#: 常に走査せず画面にも出さないフォルダ名（比較は大文字・小文字を区別しない）。
+BUILTIN_IGNORED_DIRS: frozenset[str] = frozenset({"node_modules", "__pycache__", "venv"})
+
+#: 旧形式 `ignore_dirs` の既定値。移行で「未変更」かを判定するためにだけ使う。
+LEGACY_IGNORED_DIRS = (
     ".git",
     ".hg",
     ".svn",
@@ -43,7 +46,7 @@ DEFAULT_IGNORED_DIRS = (
 DEFAULTS: dict[str, Any] = {
     "roots": [],
     "include_extensions": [".html", ".htm", ".xhtml", ".tex"],
-    "exclude": [{"target": "folder", "match": "equals", "value": name} for name in DEFAULT_IGNORED_DIRS],
+    "exclude": [],
     "ignore_globs": [],
     "max_depth": 16,
     "max_files": 50000,
@@ -310,11 +313,24 @@ def _dedupe_roots(roots: list[Root]) -> list[Root]:
     return out
 
 
+def _legacy_rules(names: list[Any]) -> list[dict[str, str]]:
+    """旧形式 `ignore_dirs` から、なお意味のある名前だけをフォルダ名の一致ルールにする。"""
+    if {str(n) for n in names} == set(LEGACY_IGNORED_DIRS):
+        return []
+    rules: list[dict[str, str]] = []
+    for item in names:
+        name = str(item).strip()
+        if not name or "/" in name or "\\" in name or name.startswith("."):
+            continue
+        if name.casefold() in BUILTIN_IGNORED_DIRS:
+            continue
+        rules.append({"target": "folder", "match": "equals", "value": name})
+    return rules
+
+
 def _exclude_from(raw: dict[str, Any], merged: dict[str, Any]) -> tuple[ExcludeRule, ...]:
-    """`exclude` と旧形式の `ignore_dirs` を合わせる。`ignore_dirs` だけなら既定を置き換える。"""
+    """`exclude` と旧形式の `ignore_dirs` を合わせる。"""
     legacy = raw.get("ignore_dirs")
     if legacy is None:
         return parse_rules(merged["exclude"])
-    base = raw.get("exclude", [])
-    legacy_rules = [{"target": "folder", "match": "equals", "value": str(name)} for name in legacy]
-    return parse_rules([*base, *legacy_rules])
+    return parse_rules([*raw.get("exclude", []), *_legacy_rules(legacy)])

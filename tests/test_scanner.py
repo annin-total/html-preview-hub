@@ -108,8 +108,24 @@ def test_global_and_root_rules_exclude_together(config: Config, tree: Path) -> N
     names = {f.name for f in scan(config).files}
     assert "wip.html" not in names  # 全体のルール（大文字・小文字を区別しない）
     assert "no-title.html" not in names  # フォルダのルール
-    assert "ignored.html" not in names  # 既定の除外（node_modules）
+    assert "ignored.html" not in names  # 内蔵の除外（node_modules）
     assert {"index.html", "broken.html"} <= names
+
+
+def test_builtin_dirs_are_always_skipped(config: Config, tree: Path) -> None:
+    for folder, name in (("Venv", "x.html"), ("__pycache__", "y.html")):
+        (tree / folder).mkdir()
+        (tree / folder / name).write_text("<title>t</title>", encoding="utf-8")
+    config.exclude = ()
+    names = {f.name for f in scan(config).files}
+    assert not {"ignored.html", "x.html", "y.html"} & names
+
+
+def test_former_defaults_are_scanned(config: Config, tree: Path) -> None:
+    (tree / "dist").mkdir()
+    (tree / "dist" / "report.html").write_text("<title>r</title>", encoding="utf-8")
+    config.exclude = ()
+    assert "report.html" in {f.name for f in scan(config).files}
 
 
 def test_folder_rule_applies_at_any_depth(config: Config, tree: Path) -> None:

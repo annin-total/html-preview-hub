@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import Config, Root
+from .config import BUILTIN_IGNORED_DIRS, Config, Root
 from .rules import is_excluded
 
 _TITLE_RE = re.compile(rb"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
@@ -354,7 +354,9 @@ def _walk_root(
             except OSError:
                 continue
             if is_dir:
-                if is_excluded(name, "folder", rules) or depth + 1 > config.max_depth:
+                if name.casefold() in BUILTIN_IGNORED_DIRS or is_excluded(name, "folder", rules):
+                    continue
+                if depth + 1 > config.max_depth:
                     continue
                 stack.append((path, depth + 1))
                 continue

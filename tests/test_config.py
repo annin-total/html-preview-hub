@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hph.config import Config, ConfigError
+from hph.config import LEGACY_IGNORED_DIRS, Config, ConfigError
 from hph.rules import ExcludeRule
 
 
@@ -54,9 +54,20 @@ def test_extensions_are_normalised() -> None:
     assert config.include_extensions == [".html", ".htm"]
 
 
-def test_default_exclude_contains_former_ignore_dirs() -> None:
-    config = Config.from_dict({})
-    assert ExcludeRule("folder", "equals", "node_modules") in config.exclude
+def test_default_exclude_is_empty() -> None:
+    assert Config.from_dict({}).exclude == ()
+
+
+def test_untouched_legacy_defaults_migrate_to_nothing() -> None:
+    assert Config.from_dict({"ignore_dirs": list(LEGACY_IGNORED_DIRS)}).exclude == ()
+
+
+def test_customised_legacy_keeps_only_meaningful_names() -> None:
+    config = Config.from_dict({"ignore_dirs": ["vendor", ".git", "node_modules", "Build", "", "a/b"]})
+    assert config.exclude == (
+        ExcludeRule("folder", "equals", "vendor"),
+        ExcludeRule("folder", "equals", "Build"),
+    )
 
 
 def test_legacy_ignore_dirs_replace_defaults() -> None:
