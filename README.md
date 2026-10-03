@@ -121,7 +121,7 @@ rm -rf ~/.local/state/html-preview-hub/tex-cache
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest            # 97 tests
+python -m pytest
 
 # ブラウザ操作の E2E（任意 / Playwright が必要）
 python -m hph ./sample-docs --port 8899 --no-browser &
