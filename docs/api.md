@@ -12,8 +12,9 @@ html-preview-hub の HTTP API は、フロントエンド（SPA）が使うた�
 | `GET` | `/api/index/watch?revision=N` | 変更があるまで待つロングポーリング |
 | `POST` | `/api/rescan` | 手動再スキャン |
 | `GET` `PUT` | `/api/config` | 設定の取得・更新 |
-| `POST` `PATCH` `DELETE` | `/api/roots[/{root_id}]` | ルートフォルダの追加・改名・削除 |
+| `POST` `PATCH` `DELETE` | `/api/roots[/{root_id}]` | ルートフォルダの追加・改名・除外ルールの更新・削除 |
 | `GET` | `/api/browse?path=` | 設定画面のフォルダ選択用ディレクトリ一覧 |
+| `POST` | `/api/pick-folder` | OS のフォルダ選択画面を開き、選ばれたフォルダを返す |
 | `POST` | `/api/user/favorites` `/api/user/hidden` `/api/user/recents` | ユーザー状態の更新 |
 | `GET` | `/api/source?fileId=` | ソース表示用のテキスト取得 |
 | `GET` | `/api/tex/status` | 検出された LaTeX エンジンなどの実行環境 |
@@ -23,7 +24,7 @@ html-preview-hub の HTTP API は、フロントエンド（SPA）が使うた�
 | `POST` | `/api/open` | 既定のブラウザで開く |
 | `GET` `HEAD` | `/raw/{rootId}/{path}` | プレビュー本体と相対アセットの配信 |
 
-JSON を返す API のエラーは `{"error": メッセージ}` を該当ステータス（`400` / `403` / `404` / `500` など）で返します。
+JSON を返す API のエラーは `{"error": メッセージ}` を該当ステータス（`400` / `403` / `404` / `409` / `500` など）で返します。
 `/raw` と `/api/tex/pdf` はプレビューの iframe にそのまま表示されるため、エラー時も HTML のエラーページを対応するステータスコードで返します。
 
 ## 起動確認
@@ -35,7 +36,7 @@ JSON を返す API のエラーは `{"error": メッセージ}` を該当ステ�
 
 - `GET /api/index` — インデックスの全量を返します。主な項目は次のとおりです。
   - `revision` / `scannedAt` / `durationMs` / `truncated` / `errors` — スキャンの状態
-  - `roots` — 登録済みルートフォルダ（存在確認・ファイル数を含む）
+  - `roots` — 登録済みルートフォルダ（存在確認・ファイル数・そのフォルダの `exclude` を含む）
   - `folders` / `files` — フォルダ / ファイルの一覧
   - `stats` — 件数などの集計
   - `userState` — お気に入り・非表示フォルダ・履歴
@@ -44,12 +45,20 @@ JSON を返す API のエラーは `{"error": メッセージ}` を該当ステ�
 
 ## 設定とルート
 
-- `GET /api/config` — 現在の設定内容と設定ファイルのパスを返します。
-- `PUT /api/config` — 拡張子・除外設定・監視間隔・LaTeX 関連設定などを部分更新し、保存後に強制再スキャンします。値は設定ファイルを読み込むときと同じ補正（下限値・拡張子の正規化など）を通します（`roots` はこの API では更新できません）。
-- `POST /api/roots` — `path`（必須）と任意の `name` でルートフォルダを追加します。
-- `PATCH /api/roots/{root_id}` — ルートフォルダの表示名を変更します。
+- `GET /api/config` — 現在の設定内容と設定ファイルのパスを返します。`config.exclude`（全体の除外ルール）と `config.roots[].exclude`（フォルダごとの除外ルール）を含みます。
+- `PUT /api/config` — 拡張子・除外設定・監視間隔・LaTeX 関連設定などを部分更新し、保存後に強制再スキャンします。値は設定ファイルを読み込むときと同じ補正（下限値・拡張子の正規化など）を通します（`roots` はこの API では更新できません）。`exclude` は全体の除外ルールを置き換えます。ルールの形と検証は [configuration.md](./configuration.md#除外ルール) のとおりで、不正なら `400` を返します。`ignore_dirs` は受け付けません（ほかの未知のキーと同じく無視されます）。
+- `POST /api/roots` — `path`（必須）と任意の `name` でルートフォルダを追加します。応答は `{"root": {...}}` で、`exclude`（追加直後は空）を含みます。
+- `PATCH /api/roots/{root_id}` — ルートフォルダの表示名（`name`）と、そのフォルダだけの除外ルール（`exclude`。置き換え）を更新します。どちらか一方だけでも、同時でも構いません。応答は `{"root": {...}}` です。`exclude` が不正なら `400`、`root_id` が無ければ `404` を返します。
 - `DELETE /api/roots/{root_id}` — ルートフォルダを削除します。
 - `GET /api/browse?path=` — 設定画面のフォルダ選択用に、指定パス（省略時はホーム）配下のサブディレクトリ一覧を返します。隠しディレクトリは除外されます。
+- `POST /api/pick-folder` — サーバーを動かしている PC に OS のフォルダ選択画面を開き、閉じられるまで待って結果を返します。ほかの処理は止まりません。応答は次のいずれかです。
+  - `{"status": "selected", "path": "/abs/path"}` — フォルダが選ばれた
+  - `{"status": "cancelled"}` — キャンセルされた、または待ち時間の上限（600 秒）を超えた
+  - `{"status": "unavailable", "message": "..."}` — 開く手段が無い、または起動に失敗した。呼び出し側はアプリ内の一覧（`/api/browse`）に切り替えます
+  - 選択画面は macOS が `osascript`、Windows が PowerShell、Linux が `zenity`（無ければ `kdialog`）で開きます。Windows と Linux は実機で未確認です。
+  - 画面が利用者の PC に出るため、次の場合は `403` を返します。要求元がループバックアドレスでない、`Host` ヘッダが `localhost` / `127.0.0.1` / `::1` でない、`Origin` ヘッダがあって `Host` と一致しない。
+  - 選択画面がすでに開いている間の要求は `409` です（同時に開けるのは 1 つ）。
+  - 選ばれたフォルダはこの API では登録しません。続けて `POST /api/roots` を呼びます。
 
 ## ユーザー状態
 

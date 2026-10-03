@@ -28,7 +28,9 @@ html-preview-hub/
 │   ├── config.py             # 設定の読み書き・ルート管理
 │   ├── instance.py           # 起動済みインスタンスの検出（二重起動の防止）
 │   ├── browser.py            # 起動時にブラウザで画面を開く（サーバーの応答を待つ）
+│   ├── rules.py              # 除外ルールの検証と判定
 │   ├── scanner.py            # 再帰スキャンとタイトル抽出（HTML / LaTeX）
+│   ├── picker.py             # OS のフォルダ選択画面を開く
 │   ├── tex.py                # LaTeX のエンジン判定・コンパイル・キャッシュ
 │   ├── texjobs.py            # LaTeX コンパイルのバックグラウンド実行と状態管理
 │   ├── texfont.lua           # フォント未検出時に読み込ませる代替フォント定義（LuaTeX）
@@ -46,7 +48,7 @@ html-preview-hub/
 │           ├── state.js      # 状態管理と検索インデックス
 │           ├── util.js       # DOM / 整形ユーティリティ
 │           ├── virtual-list.js  # 固定行高の仮想スクロール
-│           └── views/        # home / tree / preview / settings
+│           └── views/        # home / tree / preview / settings（設定は root-list・root-add・root-parts・exclude-editor・settings-advanced に分割）
 ├── sample-docs/              # 動作確認用のサンプル（HTML と LaTeX）
 ├── docs/                      # ドキュメント（本書・API 仕様・設定・使い方・スクリーンショット）
 └── tests/                     # pytest（+ 任意の Playwright E2E）
@@ -59,7 +61,9 @@ html-preview-hub/
 | `config.py` | 設定ファイルの探索・読み書き・ルートフォルダの追加/削除、既定値の一元管理 |
 | `instance.py` | 指定ホスト・ポートが空いているか、html-preview-hub が起動済みか、別のアプリが使用中かを `/api/health` への問い合わせで判定する |
 | `browser.py` | サーバーが `/api/health` に応答するまで別スレッドで待ち、既定のブラウザで画面を開く |
+| `rules.py` | 除外ルール（対象・条件・値）の検証と、名前がルールに当てはまるかの判定（大文字・小文字を区別しない） |
 | `scanner.py` | ルート配下の再帰スキャンと、HTML / LaTeX からのタイトル抽出（`(mtime, size)` キャッシュ付き） |
+| `picker.py` | OS ごとの手段（`osascript` / PowerShell / `zenity` / `kdialog`）でフォルダ選択画面を開き、結果を selected / cancelled / unavailable で返す |
 | `tex.py` | LaTeX エンジンの判定・コンパイル実行・PDF キャッシュの管理 |
 | `texjobs.py` | コンパイルをバックグラウンドジョブとして実行し、状態を保持する（ファイル単位で相乗り、異なるファイルは並列） |
 | `texfont.lua` | luaotfload の名前解決にフックし、見つからないフォントを TeX Live 同梱のフォントへ読み替える。フォント未検出で失敗したときの再試行でのみ読み込む |
@@ -69,6 +73,9 @@ html-preview-hub/
 | `server.py` | FastAPI のルーティング定義、静的アセットの提供 |
 | `rawfiles.py` | `/raw` によるファイル配信（ディレクトリの index 解決・MIME 判定・iframe 用のエラーページ） |
 | `static/js/*` | SPA のルーティング・状態管理・検索・各画面（home / tree / preview / settings）の描画 |
+| `static/js/views/exclude-editor.js` | 除外条件の部品（札の並びと追加行）。共通とフォルダごとで使い回す |
+| `static/js/views/root-list.js` `root-parts.js` `root-add.js` | 対象フォルダの一覧・削除の確認・アプリ内の一覧・フォルダの追加（選択画面の呼び出し） |
+| `static/js/views/settings-advanced.js` | 設定の「詳細設定」（スキャン・LaTeX・ショートカット） |
 
 ## 3. 処理フロー
 
@@ -96,6 +103,7 @@ html-preview-hub/
 - **プレビューの分離**: `/raw` 配下のコンテンツは既定で `allow-same-origin` を付けない `sandbox` 属性の iframe に読み込みます。これにより unique origin となり、プレビュー対象の CSS / JS はアプリ本体の DOM・localStorage・Cookie に一切干渉できません。
 - **パストラバーサル対策**: `paths.resolve_within_root()` が `..` や絶対パスを拒否し、解決後の実パスがルート配下に収まっているかを検証します。ルート外へのシンボリックリンクも拒否されます（`follow_symlinks` が有効な場合を除く）。
 - **シェルエスケープの禁止**: LaTeX のコンパイルは常に `-no-shell-escape` を付けて実行し、`\write18` によるシェルコマンド実行を許しません。
+- **フォルダ選択の呼び出し元**: `POST /api/pick-folder` は利用者の PC に選択画面を出すため、要求元がループバックであること・`Host` が `localhost` / `127.0.0.1` / `::1` であること・`Origin` があれば `Host` と一致することを確かめ、満たさなければ `403` を返します。`Host` の確認は DNS リバインディング（攻撃者のドメインを `127.0.0.1` に解決させて呼び出す手口）を、`Origin` の確認は他のサイトからの呼び出しを防ぎます。
 - **バインド先**: 既定のバインド先は `127.0.0.1` です。`--host 0.0.0.0` で公開すると、`/api/browse` を含めローカルのファイル情報が同一ネットワークへ露出するため、信頼できるネットワーク以外では避けてください。
 
 ## 関連ドキュメント
