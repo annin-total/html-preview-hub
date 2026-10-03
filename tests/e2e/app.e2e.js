@@ -9,6 +9,8 @@
  */
 const { chromium } = require("playwright");
 const BASE = process.env.BASE_URL || "http://127.0.0.1:8899";
+// 並び順は環境（ファイルの作成時刻）で変わるため、開くカードはタイトルで指定する
+const HTML_CARD = ".card .card__file >> text=コンポーネントカタログ";
 const assert = require("assert");
 (async () => {
   const browser = await chromium.launch({
@@ -37,7 +39,7 @@ const assert = require("assert");
   await page.waitForSelector(".card");
 
   // 1. お気に入り: プレビューを開いて f
-  await page.click(".card .card__file");
+  await page.click(HTML_CARD);
   await page.locator("#stage iframe:visible").first().waitFor();
   await page.click(".crumbs"); // フォーカスをアプリ側へ（iframe 内に入れない）
   await page.keyboard.press("f");
