@@ -119,9 +119,11 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
             "tex_timeout_seconds": float,
         }
         try:
-            for key, caster in updatable.items():
-                if key in payload:
-                    setattr(config, key, caster(payload[key]))
+            changes = {key: caster(payload[key]) for key, caster in updatable.items() if key in payload}
+            # 設定ファイルの読み込みと同じ補正（下限・拡張子の正規化など）を通す
+            normalized = Config.from_dict({**config.to_dict(), **changes})
+            for key in changes:
+                setattr(config, key, getattr(normalized, key))
             config.save()
         except (TypeError, ValueError, OSError) as exc:
             return _error(f"設定を更新できません: {exc}", 400)

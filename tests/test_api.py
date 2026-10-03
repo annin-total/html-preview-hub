@@ -132,6 +132,15 @@ def test_config_update_changes_scan_result(client: TestClient) -> None:
     assert payload["files"][0]["name"] == "notes.txt"
 
 
+def test_config_update_applies_same_bounds_as_config_file(client: TestClient, config: Config) -> None:
+    payload = {"max_depth": 0, "tex_timeout_seconds": 0, "tex_engine": " ", "include_extensions": ["HTML"]}
+    response = client.put("/api/config", json=payload)
+    assert response.status_code == 200
+    assert (config.max_depth, config.tex_timeout_seconds) == (1, 5.0)
+    assert config.tex_engine == "auto"
+    assert config.include_extensions == [".html"]
+
+
 def test_spa_shell_and_static_assets(client: TestClient) -> None:
     assert client.get("/").status_code == 200
     assert client.get("/static/js/app.js").status_code == 200
