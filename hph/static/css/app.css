@@ -179,7 +179,8 @@ input {
 /* --------------------------------------------------------------------------
    ボタン類
    -------------------------------------------------------------------------- */
-.pill {
+.pill,
+.chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -188,11 +189,13 @@ input {
   border-radius: var(--r-full);
   border: 1px solid var(--line-strong);
   background: var(--surface);
-  color: var(--text);
   font-size: var(--fs-sm);
-  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+}
+.pill {
+  color: var(--text);
+  font-weight: 500;
   transition:
     background var(--speed),
     border-color var(--speed),
@@ -257,18 +260,7 @@ input {
 }
 
 .chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 16px;
-  border-radius: var(--r-full);
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
   color: var(--text-mid);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  white-space: nowrap;
   transition:
     background var(--speed),
     color var(--speed),
@@ -278,8 +270,7 @@ input {
   background: var(--surface-hover);
   color: var(--text);
 }
-.chip[aria-pressed="true"],
-.chip.is-active {
+.chip[aria-pressed="true"] {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--inverse);
@@ -872,9 +863,6 @@ input {
   display: grid;
   place-items: center;
 }
-.modal[hidden] {
-  display: none;
-}
 .modal__backdrop {
   position: absolute;
   inset: 0;
@@ -1058,9 +1046,6 @@ input {
   color: var(--inverse);
   font-size: var(--fs-sm);
   box-shadow: var(--shadow-md);
-}
-.toast[hidden] {
-  display: none;
 }
 
 @media (max-width: 720px) {
