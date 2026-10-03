@@ -18,8 +18,10 @@ from fastapi import Body, FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .config import Config, ConfigError, default_state_dir
+from . import __version__
+from .config import APP_NAME, Config, ConfigError, default_state_dir
 from .index import IndexService
+from .instance import HEALTH_PATH
 from .paths import PathAccessError, resolve_within_root
 from .scanner import kind_of
 from .store import UserStore
@@ -69,6 +71,11 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     app.state.index = index
     app.state.store = user_store
     app.state.tex_jobs = tex_jobs
+
+    @app.get(HEALTH_PATH)
+    async def health() -> JSONResponse:
+        """起動済みのインスタンスを見分けるための応答。"""
+        return JSONResponse({"app": APP_NAME, "version": __version__})
 
     # ------------------------------------------------------------------
     # インデックス
