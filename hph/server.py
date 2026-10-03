@@ -38,6 +38,7 @@ RAW_PREFIX = "/raw"
 WATCH_TIMEOUT_SECONDS = 4.0
 SHUTDOWN_TIMEOUT_SECONDS = 5
 SOURCE_MAX_BYTES = 2 * 1024 * 1024
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _RAW_REFERER_RE = re.compile(rf"{RAW_PREFIX}/([0-9a-f]+)/")
 
 
@@ -80,6 +81,8 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
         """OS のフォルダ選択画面を開く。画面は利用者の PC に出るため、同じ PC からの要求に限る。"""
         if not _is_loopback(request):
             return _error("この操作は、アプリを動かしている PC からだけ行えます", 403)
+        if not _is_loopback_host(request):
+            return _error("この操作は、localhost のアドレスからだけ行えます", 403)
         if not _is_same_origin(request):
             return _error("別のサイトからは、この操作を行えません", 403)
         if pick_lock.locked():
@@ -380,6 +383,12 @@ def _is_loopback(request: Request) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _is_loopback_host(request: Request) -> bool:
+    """Host ヘッダがループバックの名前であること（DNS リバインディング対策）。"""
+    host = request.headers.get("host")
+    return host is not None and urlsplit(f"//{host}").hostname in LOOPBACK_HOSTS
 
 
 def _is_same_origin(request: Request) -> bool:

@@ -55,10 +55,10 @@ def pick_folder(timeout: float = PICK_TIMEOUT_SECONDS) -> PickResult:
 
 
 def _is_cancel(returncode: int, err: str) -> bool:
-    """zenity・kdialog は取り消しを終了コード 1 で返し、警告を stderr に出すことがある。"""
+    """zenity・kdialog は取り消しを終了コード 1 で返し、stderr に警告も出す（Windows は取り消しでも 0）。"""
     if sys.platform == "darwin":
         return _MAC_CANCEL in err
-    return returncode == 1
+    return sys.platform != "win32" and returncode == 1
 
 
 def _command() -> list[str] | None:

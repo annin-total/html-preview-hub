@@ -13,6 +13,8 @@ import hph.picker as picker
 import hph.server as server
 from hph.config import Config
 
+LOCAL = "http://127.0.0.1:8765"
+
 
 def _completed(code: int, out: bytes = b"", err: bytes = b"") -> SimpleNamespace:
     return SimpleNamespace(returncode=code, stdout=out, stderr=err)
@@ -104,7 +106,7 @@ def test_endpoint_returns_result_and_rejects_second(
 
     monkeypatch.setattr(server, "pick_folder", slow_pick)
     app = server.create_app(config, store=UserStore(tmp_path / "state"))
-    with TestClient(app, client=("127.0.0.1", 50000)) as local:
+    with TestClient(app, base_url=LOCAL, client=("127.0.0.1", 50000)) as local:
         results: list[object] = []
         first = threading.Thread(target=lambda: results.append(local.post("/api/pick-folder")))
         first.start()
@@ -122,7 +124,7 @@ def _linux(monkeypatch: pytest.MonkeyPatch, result: object) -> None:
 
 
 def test_cancel_on_linux_ignores_stderr_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
-    _linux(monkeypatch, _completed(1, err=b"Gtk-WARNING **: cannot open display"))
+    _linux(monkeypatch, _completed(1, err=b"Gtk-WARNING **: Theme parsing error: gtk.css:1:1"))
     assert picker.pick_folder().status == "cancelled"
 
 
@@ -155,7 +157,7 @@ def _origin_app(config: Config, tmp_path, monkeypatch: pytest.MonkeyPatch) -> tu
 
 def test_endpoint_rejects_foreign_origin(config: Config, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     app, called = _origin_app(config, tmp_path, monkeypatch)
-    with TestClient(app, client=("127.0.0.1", 50000)) as local:
+    with TestClient(app, base_url=LOCAL, client=("127.0.0.1", 50000)) as local:
         response = local.post("/api/pick-folder", headers={"Origin": "http://evil.example"})
     assert response.status_code == 403
     assert called == []
@@ -163,7 +165,34 @@ def test_endpoint_rejects_foreign_origin(config: Config, tmp_path, monkeypatch: 
 
 def test_endpoint_accepts_same_origin(config: Config, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     app, called = _origin_app(config, tmp_path, monkeypatch)
-    with TestClient(app, client=("127.0.0.1", 50000)) as local:
-        response = local.post("/api/pick-folder", headers={"Origin": "http://testserver"})
+    with TestClient(app, base_url=LOCAL, client=("127.0.0.1", 50000)) as local:
+        response = local.post("/api/pick-folder", headers={"Origin": LOCAL})
     assert response.status_code == 200
     assert called == [1]
+
+
+def test_endpoint_rejects_rebound_host(config: Config, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app, called = _origin_app(config, tmp_path, monkeypatch)
+    base = "http://evil.example:8765"
+    with TestClient(app, base_url=base, client=("127.0.0.1", 50000)) as local:
+        response = local.post("/api/pick-folder", headers={"Origin": base})
+    assert response.status_code == 403
+    assert called == []
+
+
+@pytest.mark.parametrize("host", ["[::1]:8765", "LOCALHOST:8765", "localhost"])
+def test_endpoint_accepts_loopback_host_names(
+    config: Config, tmp_path, monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    app, called = _origin_app(config, tmp_path, monkeypatch)
+    with TestClient(app, base_url=LOCAL, client=("127.0.0.1", 50000)) as local:
+        response = local.post("/api/pick-folder", headers={"Host": host, "Origin": f"http://{host}"})
+    assert response.status_code == 200
+    assert called == [1]
+
+
+def test_windows_failure_with_exit_code_1_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(picker.sys, "platform", "win32")
+    monkeypatch.setattr(picker.shutil, "which", lambda name: name)
+    _use(monkeypatch, _completed(1, err=b"Add-Type : Cannot add type"))
+    assert picker.pick_folder().status == "unavailable"
