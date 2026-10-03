@@ -80,9 +80,13 @@ def test_windows_output_is_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
     assert picker.pick_folder().path == "C:\\Users\\me\\資料"
 
 
-def test_endpoint_rejects_non_loopback(config: Config, tmp_path) -> None:
+def test_endpoint_rejects_non_loopback(config: Config, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     from hph.store import UserStore
 
+    def must_not_pick() -> picker.PickResult:
+        raise AssertionError("ループバック以外で選択画面を開いてはならない")
+
+    monkeypatch.setattr(server, "pick_folder", must_not_pick)
     app = server.create_app(config, store=UserStore(tmp_path / "state"))
     with TestClient(app, client=("192.168.0.10", 50000)) as remote:
         assert remote.post("/api/pick-folder").status_code == 403
