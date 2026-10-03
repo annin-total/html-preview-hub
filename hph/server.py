@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Body, FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -80,6 +80,8 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
         """OS のフォルダ選択画面を開く。画面は利用者の PC に出るため、同じ PC からの要求に限る。"""
         if not _is_loopback(request):
             return _error("この操作は、アプリを動かしている PC からだけ行えます", 403)
+        if not _is_same_origin(request):
+            return _error("別のサイトからは、この操作を行えません", 403)
         if pick_lock.locked():
             return _error("フォルダの選択画面がすでに開いています", 409)
         async with pick_lock:
@@ -378,6 +380,12 @@ def _is_loopback(request: Request) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _is_same_origin(request: Request) -> bool:
+    """Origin ヘッダがあれば、Host と一致するときだけ許す（他サイトからの単純リクエストを拒む）。"""
+    origin = request.headers.get("origin")
+    return origin is None or urlsplit(origin).netloc == request.headers.get("host")
 
 
 def _error(message: str, status_code: int) -> JSONResponse:

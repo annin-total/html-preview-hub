@@ -19,11 +19,9 @@ def _completed(code: int, out: bytes = b"", err: bytes = b"") -> SimpleNamespace
 
 
 @pytest.fixture()
-def fake_run(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
-    calls: list[list[str]] = []
+def fake_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(picker.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(picker.sys, "platform", "darwin")
-    return calls
 
 
 def _use(monkeypatch: pytest.MonkeyPatch, result: object) -> None:
@@ -35,22 +33,22 @@ def _use(monkeypatch: pytest.MonkeyPatch, result: object) -> None:
     monkeypatch.setattr(picker.subprocess, "run", run)
 
 
-def test_selected_path_is_trimmed(monkeypatch: pytest.MonkeyPatch, fake_run: list) -> None:
+def test_selected_path_is_trimmed(monkeypatch: pytest.MonkeyPatch, fake_run: None) -> None:
     _use(monkeypatch, _completed(0, "/Users/me/資料/\n".encode()))
     assert picker.pick_folder().to_json() == {"status": "selected", "path": "/Users/me/資料"}
 
 
-def test_cancel_on_macos(monkeypatch: pytest.MonkeyPatch, fake_run: list) -> None:
+def test_cancel_on_macos(monkeypatch: pytest.MonkeyPatch, fake_run: None) -> None:
     _use(monkeypatch, _completed(1, err=b"execution error: User canceled. (-128)"))
     assert picker.pick_folder().status == "cancelled"
 
 
-def test_timeout_is_cancel(monkeypatch: pytest.MonkeyPatch, fake_run: list) -> None:
+def test_timeout_is_cancel(monkeypatch: pytest.MonkeyPatch, fake_run: None) -> None:
     _use(monkeypatch, subprocess.TimeoutExpired(["osascript"], 1))
     assert picker.pick_folder().status == "cancelled"
 
 
-def test_failure_is_unavailable(monkeypatch: pytest.MonkeyPatch, fake_run: list) -> None:
+def test_failure_is_unavailable(monkeypatch: pytest.MonkeyPatch, fake_run: None) -> None:
     _use(monkeypatch, _completed(1, err=b"not authorized"))
     assert picker.pick_folder().status == "unavailable"
 
@@ -115,3 +113,57 @@ def test_endpoint_returns_result_and_rejects_second(
         release.set()
         first.join(5)
         assert results[0].json() == {"status": "selected", "path": "/x"}
+
+
+def _linux(monkeypatch: pytest.MonkeyPatch, result: object) -> None:
+    monkeypatch.setattr(picker.sys, "platform", "linux")
+    monkeypatch.setattr(picker.shutil, "which", lambda name: f"/usr/bin/{name}")
+    _use(monkeypatch, result)
+
+
+def test_cancel_on_linux_ignores_stderr_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    _linux(monkeypatch, _completed(1, err=b"Gtk-WARNING **: cannot open display"))
+    assert picker.pick_folder().status == "cancelled"
+
+
+def test_other_failure_on_linux_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    _linux(monkeypatch, _completed(2, err=b"boom"))
+    assert picker.pick_folder().status == "unavailable"
+
+
+def test_kdialog_start_dir_is_expanded(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[list[str]] = []
+    monkeypatch.setattr(picker.sys, "platform", "linux")
+    monkeypatch.setattr(picker.shutil, "which", lambda name: "/bin/kdialog" if name == "kdialog" else None)
+    monkeypatch.setattr(picker.subprocess, "run", lambda cmd, **_: seen.append(cmd) or _completed(0, b"/x"))
+    picker.pick_folder()
+    assert "~" not in seen[0]
+
+
+def _origin_app(config: Config, tmp_path, monkeypatch: pytest.MonkeyPatch) -> tuple[object, list[int]]:
+    from hph.store import UserStore
+
+    called: list[int] = []
+
+    def pick() -> picker.PickResult:
+        called.append(1)
+        return picker.PickResult("cancelled")
+
+    monkeypatch.setattr(server, "pick_folder", pick)
+    return server.create_app(config, store=UserStore(tmp_path / "state")), called
+
+
+def test_endpoint_rejects_foreign_origin(config: Config, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app, called = _origin_app(config, tmp_path, monkeypatch)
+    with TestClient(app, client=("127.0.0.1", 50000)) as local:
+        response = local.post("/api/pick-folder", headers={"Origin": "http://evil.example"})
+    assert response.status_code == 403
+    assert called == []
+
+
+def test_endpoint_accepts_same_origin(config: Config, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app, called = _origin_app(config, tmp_path, monkeypatch)
+    with TestClient(app, client=("127.0.0.1", 50000)) as local:
+        response = local.post("/api/pick-folder", headers={"Origin": "http://testserver"})
+    assert response.status_code == 200
+    assert called == [1]

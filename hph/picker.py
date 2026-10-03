@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -48,9 +49,16 @@ def pick_folder(timeout: float = PICK_TIMEOUT_SECONDS) -> PickResult:
     err = completed.stderr.decode("utf-8", errors="replace").strip()
     if completed.returncode == 0:
         return PickResult("selected", path=_strip_trailing_sep(out)) if out else PickResult("cancelled")
-    if not err or _MAC_CANCEL in err:
+    if not err or _is_cancel(completed.returncode, err):
         return PickResult("cancelled")
     return PickResult("unavailable", message=f"フォルダの選択画面を開けません: {err[:200]}")
+
+
+def _is_cancel(returncode: int, err: str) -> bool:
+    """zenity・kdialog は取り消しを終了コード 1 で返し、警告を stderr に出すことがある。"""
+    if sys.platform == "darwin":
+        return _MAC_CANCEL in err
+    return returncode == 1
 
 
 def _command() -> list[str] | None:
@@ -68,7 +76,7 @@ def _command() -> list[str] | None:
     if shutil.which("zenity"):
         return ["zenity", "--file-selection", "--directory", f"--title={PICK_PROMPT}"]
     if shutil.which("kdialog"):
-        return ["kdialog", "--getexistingdirectory", "~", "--title", PICK_PROMPT]
+        return ["kdialog", "--getexistingdirectory", os.path.expanduser("~"), "--title", PICK_PROMPT]
     return None
 
 
