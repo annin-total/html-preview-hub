@@ -151,6 +151,10 @@ export class Store {
     return this.treeQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
   }
 
+  get roots() {
+    return this.index ? this.index.roots : [];
+  }
+
   get sort() {
     return SORTS.find((s) => s.id === this.prefs.sort) || SORTS[0];
   }

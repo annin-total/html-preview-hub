@@ -222,7 +222,7 @@ function nextLabelMode() {
 
 function renderChrome() {
   const stats = store.stats();
-  const roots = store.index ? store.index.roots : [];
+  const roots = store.roots;
   dom.brandTitle.textContent =
     roots.length === 1 ? roots[0].name : "html-preview-hub";
   const parts = [`${stats.folders} フォルダ`, `${stats.files} 件`];
@@ -256,9 +256,7 @@ store.subscribe((reason) => {
 // ---------------------------------------------------------------------------
 dom.brand.addEventListener("click", navigateHome);
 dom.backBtn.addEventListener("click", navigateHome);
-dom.settingsBtn.addEventListener("click", () =>
-  settingsView.open(store.index ? store.index.roots : []),
-);
+dom.settingsBtn.addEventListener("click", () => settingsView.open(store.roots));
 dom.favoritesToggle.addEventListener("click", () => {
   store.setPref("favoritesOnly", !store.prefs.favoritesOnly);
 });
@@ -274,10 +272,7 @@ let rescanning = false;
 async function runRescan() {
   if (rescanning) return;
   rescanning = true;
-  dom.rescanBtns.forEach((btn) => {
-    btn.disabled = true;
-    btn.classList.add("is-busy");
-  });
+  setRescanBusy(true);
   notify("再スキャン中…");
   try {
     const payload = await api.rescan();
@@ -287,11 +282,15 @@ async function runRescan() {
     notify(error.message);
   } finally {
     rescanning = false;
-    dom.rescanBtns.forEach((btn) => {
-      btn.disabled = false;
-      btn.classList.remove("is-busy");
-    });
+    setRescanBusy(false);
   }
+}
+
+function setRescanBusy(busy) {
+  dom.rescanBtns.forEach((btn) => {
+    btn.disabled = busy;
+    btn.classList.toggle("is-busy", busy);
+  });
 }
 dom.rescanBtns.forEach((btn) => btn.addEventListener("click", runRescan));
 
@@ -362,7 +361,7 @@ document.addEventListener("keydown", (event) => {
       break;
     case ",":
       event.preventDefault();
-      settingsView.open(store.index ? store.index.roots : []);
+      settingsView.open(store.roots);
       break;
     case "ArrowDown":
     case "ArrowUp": {

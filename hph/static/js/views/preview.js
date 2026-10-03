@@ -313,13 +313,12 @@ export function createPreviewView({
 
   function reload() {
     if (!current) return;
+    dropFromPool(current.id);
     if (current.kind === "tex") {
-      dropFromPool(current.id);
       open(current, { force: true });
       return;
     }
     cacheBuster = Date.now();
-    dropFromPool(current.id);
     open(current);
     onNotify("再読み込みしました");
   }
