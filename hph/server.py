@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import os
 import re
 import webbrowser
@@ -21,6 +22,7 @@ from .config import APP_NAME, Config, ConfigError, default_state_dir
 from .index import IndexService
 from .instance import HEALTH_PATH
 from .paths import PathAccessError, resolve_within_root
+from .picker import pick_folder
 from .rawfiles import file_error, serve_file
 from .rules import parse_rules
 from .scanner import FileEntry, detect_charset, kind_of
@@ -70,6 +72,19 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
         if root is None:
             raise PathAccessError("ルートが見つかりません", 404)
         return resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+
+    pick_lock = asyncio.Lock()
+
+    @app.post("/api/pick-folder")
+    async def pick_folder_route(request: Request) -> JSONResponse:
+        """OS のフォルダ選択画面を開く。画面は利用者の PC に出るため、同じ PC からの要求に限る。"""
+        if not _is_loopback(request):
+            return _error("この操作は、アプリを動かしている PC からだけ行えます", 403)
+        if pick_lock.locked():
+            return _error("フォルダの選択画面がすでに開いています", 409)
+        async with pick_lock:
+            result = await asyncio.to_thread(pick_folder)
+        return JSONResponse(result.to_json())
 
     @app.get(HEALTH_PATH)
     async def health() -> JSONResponse:
@@ -355,6 +370,14 @@ def _toggle(store: UserStore, key: str, value: Any) -> JSONResponse:
         return _error("ID は必須です", 400)
     added = store.toggle(key, identifier)
     return JSONResponse({"added": added, key: store.snapshot()[key]})
+
+
+def _is_loopback(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _error(message: str, status_code: int) -> JSONResponse:
