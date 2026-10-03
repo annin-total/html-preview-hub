@@ -131,15 +131,6 @@ def _strip_comments(text: str) -> str:
     return re.sub(r"(?<!\\)%.*", "", text)
 
 
-def read_preamble(path: Path, limit: int = PREAMBLE_BYTES) -> str:
-    """先頭部分をテキストとして読む（判定用なので厳密なデコードは行わない）。"""
-    try:
-        with path.open("rb") as fh:
-            return fh.read(limit).decode("utf-8", errors="replace")
-    except OSError:
-        return ""
-
-
 def choose_engine(source_head: str, available: dict[str, str], configured: str = "auto") -> Engine | None:
     """マジックコメント → プリアンブル → 既定順の優先度でエンジンを選ぶ。"""
     if configured and configured != "auto":
