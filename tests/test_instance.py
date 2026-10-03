@@ -178,5 +178,7 @@ def test_browser_gives_up_when_server_never_responds(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(server, "open_browser", opened.append)
     monkeypatch.setattr(server, "BROWSER_POLL_SECONDS", 0)
     monkeypatch.setattr(server, "BROWSER_WAIT_SECONDS", 0.05)
-    server.open_browser_when_ready("http://x/", "127.0.0.1", 1).join(timeout=5)
+    thread = server.open_browser_when_ready("http://x/", "127.0.0.1", 1)
+    thread.join(timeout=5)
+    assert not thread.is_alive()
     assert opened == []
