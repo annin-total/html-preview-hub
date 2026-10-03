@@ -299,6 +299,32 @@ const assert = require("assert");
     await page.locator(".browser").waitFor({ state: "detached" });
   }
   await page.unroute("**/api/pick-folder");
+
+  // 15. 設定: フォルダごとの除外条件は、札の再描画をまたいでも失われない
+  const sampleRow = page.locator(".root-row").first();
+  await sampleRow.locator("summary").click();
+  const addRootRule = async (value) => {
+    await sampleRow.locator('input[aria-label="名前"]').fill(value);
+    await sampleRow.locator(".rule-form .pill").click();
+    await sampleRow
+      .locator(".rule:not(.is-pending)", { hasText: value })
+      .waitFor();
+  };
+  await addRootRule("e2e-rule-a");
+  await sampleRow.locator("button.chip", { hasText: /^削除$/ }).click();
+  await sampleRow.locator(".root-row__confirm .chip").first().click();
+  await addRootRule("e2e-rule-b");
+  const savedRoot = (
+    await (await page.request.get(base + "/api/config")).json()
+  ).config.roots[0];
+  assert.deepEqual(
+    savedRoot.exclude.map((rule) => rule.value),
+    ["e2e-rule-a", "e2e-rule-b"],
+    "再描画のあとに足しても、先に保存した条件が残る",
+  );
+  await page.request.patch(`${base}/api/roots/${savedRoot.id}`, {
+    data: { exclude: [] },
+  });
   await page.keyboard.press("Escape");
 
   console.log("E2E OK / console errors:", errors);
