@@ -92,8 +92,9 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
     const exts = config.include_extensions;
     const html = HTML_EXTS.every((ext) => exts.includes(ext));
     const tex = exts.includes(TEX_EXT);
+    // HTML の拡張子が一部だけのときは、隠さず「その他」に出す
     const others = exts.filter(
-      (ext) => !HTML_EXTS.includes(ext) && ext !== TEX_EXT,
+      (ext) => ext !== TEX_EXT && !(html && HTML_EXTS.includes(ext)),
     );
     // 「その他」があればすべてオフにはならないので、HTML・LaTeX の両方を外せる
     const lastOne = !others.length && Number(html) + Number(tex) === 1;
@@ -159,17 +160,19 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
     );
   }
 
+  /** 保存中は全チェックを止める（続けて押すと古い一覧から計算した保存で上書きするため）。 */
   async function saveTypes(next, input) {
+    const boxes = [...typesNode.querySelectorAll("input")];
+    const index = boxes.indexOf(input);
+    for (const box of boxes) box.disabled = true;
     try {
       await persist(async () => {
         await api.updateConfig({ include_extensions: next });
         config.include_extensions = next;
       });
     } catch {
-      input.checked = !input.checked;
-      return;
+      // persist が通知済み。config は保存前のままなので、下の描き直しでチェックも戻る
     }
-    const index = [...typesNode.querySelectorAll("input")].indexOf(input);
     const fresh = typesSection();
     typesNode.replaceWith(fresh);
     typesNode = fresh;
@@ -210,7 +213,7 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
     },
     setRoots(indexRoots) {
       lastRoots = indexRoots;
-      rootList.updateCounts(indexRoots);
+      rootList.setRoots(indexRoots);
     },
     get isOpen() {
       return !dom.modal.hidden;

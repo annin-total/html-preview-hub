@@ -1113,9 +1113,12 @@ input {
   color: var(--text-dim);
   cursor: pointer;
 }
-.rule__remove:hover {
+.rule__remove:hover:not(:disabled) {
   background: var(--line-soft);
   color: var(--danger);
+}
+.rule__remove:disabled {
+  cursor: default;
 }
 .rule.is-pending {
   opacity: 0.55;

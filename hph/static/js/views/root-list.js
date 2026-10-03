@@ -2,6 +2,7 @@
 
 import { el, errorReason } from "../util.js";
 import { createExcludeEditor } from "./exclude-editor.js";
+import { createRootAdder } from "./root-add.js";
 import { folderBrowser, manualEntry, removeConfirm } from "./root-parts.js";
 
 const NOTE = "一覧に表示するフォルダです。中のフォルダも含めて探します。";
@@ -22,12 +23,24 @@ export function createRootList({
 }) {
   let roots = [];
   let section = null;
-  let picking = false;
-  let browser = null;
   let confirming = null;
   let manualOpen = false;
   const openRules = new Set();
   const counts = new Map();
+  const adder = createRootAdder({
+    api,
+    onNotify,
+    onAdded: async () => {
+      await onChanged();
+      await reload();
+      focusAddButton();
+    },
+    onUpdate: (focus) => {
+      redraw();
+      if (focus === "add") focusAddButton();
+      if (focus === "browser") focusIn("button.browser__item");
+    },
+  });
 
   function render(nextRoots) {
     roots = nextRoots;
@@ -45,15 +58,15 @@ export function createRootList({
           el("button", {
             class: "pill pill--solid",
             type: "button",
-            disabled: picking,
-            text: picking ? "選択画面を開いています…" : "フォルダを追加",
-            onclick: pick,
+            disabled: adder.picking,
+            text: adder.picking ? "選択画面を開いています…" : "フォルダを追加",
+            onclick: adder.pick,
           }),
         ]),
         el("p", {
           class: "section-note",
           "aria-live": "polite",
-          text: picking ? NOTE_PICKING : NOTE,
+          text: adder.picking ? NOTE_PICKING : NOTE,
         }),
         el(
           "div",
@@ -65,19 +78,15 @@ export function createRootList({
                 text: "まだ登録されていません。「フォルダを追加」から選んでください。",
               }),
         ),
-        browser
+        adder.browser
           ? el(
               "div",
               { style: "margin-bottom:var(--sp-3)" },
               folderBrowser({
-                browser,
-                onNavigate: openBrowser,
-                onCancel: () => {
-                  browser = null;
-                  redraw();
-                  focusAddButton();
-                },
-                onAdd: () => addRoot(browser.path),
+                browser: adder.browser,
+                onNavigate: adder.openBrowser,
+                onCancel: adder.closeBrowser,
+                onAdd: () => adder.add(adder.browser.path),
               }),
             )
           : null,
@@ -86,7 +95,7 @@ export function createRootList({
           onToggle: (open) => {
             manualOpen = open;
           },
-          onSubmit: addRoot,
+          onSubmit: adder.add,
         }),
       ],
     );
@@ -187,11 +196,15 @@ export function createRootList({
             label: `${root.name} の除外条件を追加`,
             emptyText: "除外条件はありません",
             state: editorState(root.id),
-            onChange: (exclude) =>
-              persist(async () => {
+            onChange: async (exclude) => {
+              await persist(async () => {
                 await api.updateRoot(root.id, { exclude });
+                root.exclude = exclude;
                 summary.textContent = rulesSummary(exclude.length);
-              }),
+              });
+              // 保存中に節が描き直されていたら、その札は保存前の条件で作られている
+              if (!details.isConnected && section.isConnected) redraw();
+            },
           }),
         ),
       ],
@@ -203,68 +216,18 @@ export function createRootList({
     return details;
   }
 
-  async function pick() {
-    picking = true;
-    redraw();
-    let result;
-    try {
-      result = await api.pickFolder();
-    } catch (error) {
-      result =
-        error.status === 403
-          ? { status: "unavailable" }
-          : { status: "", error };
-    }
-    picking = false;
-    if (result.status === "selected" && (await addRoot(result.path))) return;
-    if (result.status === "unavailable") return openBrowser();
-    if (result.error)
-      onNotify(
-        result.error.status === 409
-          ? "フォルダの選択画面はすでに開いています"
-          : `追加できません: ${errorReason(result.error)}`,
-      );
-    redraw();
-    focusAddButton();
-  }
-
-  /** 追加して設定を読み直す。失敗したら通知して false を返す（表示はそのまま）。 */
-  async function addRoot(path) {
-    try {
-      const result = await api.addRoot(path);
-      onNotify(`${result.root.name} を追加しました`);
-    } catch (error) {
-      onNotify(`追加できません: ${errorReason(error)}`);
-      return false;
-    }
-    browser = null;
-    await onChanged();
-    await reload();
-    focusAddButton();
-    return true;
-  }
-
-  async function openBrowser(path) {
-    try {
-      browser = await api.browse(path);
-    } catch (error) {
-      onNotify(errorReason(error));
-    }
-    redraw();
-    focusIn(browser ? "button.browser__item" : ".section-head .pill");
-  }
-
   return {
     render,
-    /** 再描画せずに件数だけ差し替える（入力中のフォーカスを奪わないため）。 */
-    updateCounts(nextRoots) {
+    /** 最新のルートを覚え、件数だけ差し替える（再描画すると入力中のフォーカスを奪うため）。 */
+    setRoots(nextRoots) {
+      roots = nextRoots;
       for (const root of nextRoots) {
         const count = counts.get(root.id);
         if (count) count.textContent = `${root.fileCount} 件`;
       }
     },
     reset() {
-      browser = null;
+      adder.reset();
       confirming = null;
     },
   };
