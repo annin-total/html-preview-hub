@@ -25,7 +25,7 @@ from .config import APP_NAME, Config, ConfigError, default_state_dir
 from .index import IndexService
 from .instance import HEALTH_PATH, PortState, probe
 from .paths import PathAccessError, resolve_within_root
-from .scanner import META_CHARSET_RE, detect_charset, kind_of
+from .scanner import META_CHARSET_RE, FileEntry, detect_charset, kind_of
 from .store import UserStore
 from .tex import available_engines, has_dvipdfmx, has_latexmk
 from .tex import cached_pdf as cached_tex_pdf
@@ -77,6 +77,15 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     app.state.index = index
     app.state.store = user_store
     app.state.tex_jobs = tex_jobs
+
+    def _resolve_entry(entry: FileEntry | None) -> Path:
+        """インデックス上のファイルを実パスへ解決する。解決できなければ PathAccessError。"""
+        if entry is None:
+            raise PathAccessError("ファイルが見つかりません", 404)
+        root = config.root(entry.root_id)
+        if root is None:
+            raise PathAccessError("ルートが見つかりません", 404)
+        return resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
 
     @app.get(HEALTH_PATH)
     async def health() -> JSONResponse:
@@ -236,15 +245,10 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
         """
         file_id = str(payload.get("fileId", ""))
         entry = index.file(file_id)
-        if entry is None:
-            return _error("ファイルが見つかりません", 404)
-        if kind_of(entry.name) != "tex":
+        if entry is not None and kind_of(entry.name) != "tex":
             return _error("LaTeX ファイルではありません", 400)
-        root = config.root(entry.root_id)
-        if root is None:
-            return _error("ルートが見つかりません", 404)
         try:
-            path = resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+            path = _resolve_entry(entry)
         except PathAccessError as exc:
             return _error(exc.message, exc.status_code)
 
@@ -263,14 +267,8 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     @app.get("/api/tex/pdf")
     async def tex_pdf(fileId: str = Query(...), v: str = Query(...)) -> Response:
         """コンパイル済み PDF を返す（プレビューの iframe から参照する）。"""
-        entry = index.file(fileId)
-        if entry is None:
-            return _file_error("ファイルが見つかりません", 404)
-        root = config.root(entry.root_id)
-        if root is None:
-            return _file_error("ルートが見つかりません", 404)
         try:
-            path = resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+            path = _resolve_entry(index.file(fileId))
         except PathAccessError as exc:
             return _file_error(exc.message, exc.status_code)
         pdf = cached_tex_pdf(path, config, v)
@@ -284,14 +282,8 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
 
     @app.get("/api/source")
     async def get_source(fileId: str = Query(...)) -> JSONResponse:
-        entry = index.file(fileId)
-        if entry is None:
-            return _error("ファイルが見つかりません", 404)
-        root = config.root(entry.root_id)
-        if root is None:
-            return _error("ルートが見つかりません", 404)
         try:
-            path = resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+            path = _resolve_entry(index.file(fileId))
             data = path.read_bytes()[:SOURCE_MAX_BYTES]
         except PathAccessError as exc:
             return _error(exc.message, exc.status_code)
@@ -308,14 +300,8 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
 
     @app.post("/api/open")
     async def open_externally(payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
-        entry = index.file(str(payload.get("fileId", "")))
-        if entry is None:
-            return _error("ファイルが見つかりません", 404)
-        root = config.root(entry.root_id)
-        if root is None:
-            return _error("ルートが見つかりません", 404)
         try:
-            path = resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+            path = _resolve_entry(index.file(str(payload.get("fileId", ""))))
             opened = webbrowser.open(path.as_uri())
         except PathAccessError as exc:
             return _error(exc.message, exc.status_code)
