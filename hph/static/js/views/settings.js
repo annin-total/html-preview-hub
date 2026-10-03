@@ -18,6 +18,13 @@ const SHORTCUTS = [
   [", (カンマ)", "設定を開く"],
   ["カード右クリック", "フォルダの非表示切り替え"],
 ];
+const LABEL_STYLE = "flex:0 0 210px;font-size:12px;color:var(--text-dim)";
+
+const parseList = (value) =>
+  value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 export function createSettingsView({ dom, api, onChanged, onNotify }) {
   let config = null;
@@ -168,29 +175,15 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
         (v) => Number(v),
       ],
     ];
-    const inputs = new Map();
-    const rows = fields.map(([key, label, format]) => {
-      const input = el("input", { type: "text", value: format(config[key]) });
-      inputs.set(key, input);
-      return el("div", { class: "field", style: "margin-bottom:8px" }, [
-        el("span", {
-          style: "flex:0 0 210px;font-size:12px;color:var(--text-dim)",
-          text: label,
-        }),
-        input,
-      ]);
-    });
+    const { rows, button } = fieldForm(fields, "LaTeX 設定を保存");
     const detected = texStatus
       ? texStatus.engines.length
         ? `検出: ${texStatus.engines.join(", ")}${texStatus.latexmk ? " / latexmk" : ""}`
         : "検出されたエンジンはありません（pdflatex / xelatex / lualatex / tectonic のいずれかを導入してください）"
       : "";
     return el("div", {}, [
-      el("div", { class: "field", style: "margin-bottom:8px" }, [
-        el("span", {
-          style: "flex:0 0 210px;font-size:12px;color:var(--text-dim)",
-          text: "PDF プレビュー",
-        }),
+      fieldRow(
+        "PDF プレビュー",
         el("button", {
           class: "chip",
           type: "button",
@@ -198,26 +191,45 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
           text: config.tex_enabled ? "有効" : "無効",
           onclick: () => save({ tex_enabled: !config.tex_enabled }),
         }),
-      ]),
+      ),
       ...rows,
       el("div", {
         style: "font-size:11px;color:var(--text-faint);margin:4px 0 10px",
         text: detected,
       }),
-      el("div", { class: "field" }, [
-        el("button", {
-          class: "pill",
-          type: "button",
-          text: "LaTeX 設定を保存",
-          onclick: () => {
-            const patch = {};
-            for (const [key, , , parse] of fields)
-              patch[key] = parse(inputs.get(key).value);
-            save(patch);
-          },
-        }),
-      ]),
+      button,
     ]);
+  }
+
+  function fieldRow(label, control) {
+    return el("div", { class: "field", style: "margin-bottom:8px" }, [
+      el("span", { style: LABEL_STYLE, text: label }),
+      control,
+    ]);
+  }
+
+  /** 入力欄の行と、全欄をまとめて保存するボタンを作る。 */
+  function fieldForm(fields, buttonText) {
+    const inputs = new Map();
+    const rows = fields.map(([key, label, format]) => {
+      const input = el("input", { type: "text", value: format(config[key]) });
+      inputs.set(key, input);
+      return fieldRow(label, input);
+    });
+    const button = el("div", { class: "field" }, [
+      el("button", {
+        class: "pill",
+        type: "button",
+        text: buttonText,
+        onclick: () => {
+          const patch = {};
+          for (const [key, , , parse] of fields)
+            patch[key] = parse(inputs.get(key).value);
+          save(patch);
+        },
+      }),
+    ]);
+    return { rows, button };
   }
 
   async function save(patch) {
@@ -237,21 +249,13 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
         "include_extensions",
         "対象拡張子（カンマ区切り）",
         (v) => v.join(", "),
-        (v) =>
-          v
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
+        parseList,
       ],
       [
         "ignore_dirs",
         "除外フォルダ名（カンマ区切り）",
         (v) => v.join(", "),
-        (v) =>
-          v
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
+        parseList,
       ],
       ["max_depth", "最大階層", String, (v) => Number(v)],
       [
@@ -261,34 +265,8 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
         (v) => Number(v),
       ],
     ];
-    const inputs = new Map();
-    const rows = fields.map(([key, label, format]) => {
-      const input = el("input", { type: "text", value: format(config[key]) });
-      inputs.set(key, input);
-      return el("div", { class: "field", style: "margin-bottom:8px" }, [
-        el("span", {
-          style: "flex:0 0 210px;font-size:12px;color:var(--text-dim)",
-          text: label,
-        }),
-        input,
-      ]);
-    });
-    return el("div", {}, [
-      ...rows,
-      el("div", { class: "field" }, [
-        el("button", {
-          class: "pill",
-          type: "button",
-          text: "スキャン設定を保存",
-          onclick: () => {
-            const patch = {};
-            for (const [key, , , parse] of fields)
-              patch[key] = parse(inputs.get(key).value);
-            save(patch);
-          },
-        }),
-      ]),
-    ]);
+    const { rows, button } = fieldForm(fields, "スキャン設定を保存");
+    return el("div", {}, [...rows, button]);
   }
 
   function render(indexRoots = []) {
