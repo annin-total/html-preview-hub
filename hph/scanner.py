@@ -20,7 +20,7 @@ from .config import Config, Root
 
 _TITLE_RE = re.compile(rb"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _H1_RE = re.compile(rb"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
-_META_CHARSET_RE = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([a-zA-Z0-9_\-]+)""", re.IGNORECASE)
+META_CHARSET_RE = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([a-zA-Z0-9_\-]+)""", re.IGNORECASE)
 _TAG_RE = re.compile(rb"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 
@@ -168,7 +168,7 @@ def extract_title(path: Path, *, limit: int, fallback: str) -> str:
         return fallback
     if kind_of(path.name) == "tex":
         return extract_tex_title(head.decode("utf-8", errors="replace")) or fallback
-    encoding = _detect_encoding(head)
+    encoding = detect_charset(head)
     for pattern in (_TITLE_RE, _H1_RE):
         match = pattern.search(head)
         if not match:
@@ -221,8 +221,9 @@ def _clean_tex_text(raw: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
 
-def _detect_encoding(head: bytes) -> str:
-    match = _META_CHARSET_RE.search(head)
+def detect_charset(head: bytes) -> str:
+    """`<meta charset>` の宣言から文字コードを決める。未宣言・未知なら utf-8。"""
+    match = META_CHARSET_RE.search(head)
     if match:
         try:
             candidate = match.group(1).decode("ascii").lower()

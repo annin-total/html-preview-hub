@@ -25,7 +25,7 @@ from .config import APP_NAME, Config, ConfigError, default_state_dir
 from .index import IndexService
 from .instance import HEALTH_PATH, PortState, probe
 from .paths import PathAccessError, resolve_within_root
-from .scanner import kind_of
+from .scanner import META_CHARSET_RE, detect_charset, kind_of
 from .store import UserStore
 from .tex import available_engines, has_dvipdfmx, has_latexmk
 from .tex import cached_pdf as cached_tex_pdf
@@ -43,7 +43,6 @@ BROWSER_WAIT_SECONDS = 120.0
 BROWSER_POLL_SECONDS = 0.3
 SOURCE_MAX_BYTES = 2 * 1024 * 1024
 DIRECTORY_INDEX_NAMES = ("index.html", "index.htm")
-_META_CHARSET_RE = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([a-zA-Z0-9_\-]+)""", re.IGNORECASE)
 _RAW_REFERER_RE = re.compile(rf"{RAW_PREFIX}/([0-9a-f]+)/")
 
 mimetypes.init()
@@ -303,7 +302,7 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
                 "fileId": fileId,
                 "path": str(path),
                 "truncated": path.stat().st_size > SOURCE_MAX_BYTES,
-                "text": data.decode(_charset_of(data[:4096]), errors="replace"),
+                "text": data.decode(detect_charset(data[:4096]), errors="replace"),
             }
         )
 
@@ -407,23 +406,11 @@ def _media_type_for(path: Path) -> str:
                 head = path.open("rb").read(4096)
             except OSError:
                 head = b""
-            if _META_CHARSET_RE.search(head):
+            if META_CHARSET_RE.search(head):
                 return "text/html"
             return "text/html; charset=utf-8"
         return f"{guessed}; charset=utf-8"
     return guessed
-
-
-def _charset_of(head: bytes) -> str:
-    match = _META_CHARSET_RE.search(head)
-    if match:
-        try:
-            candidate = match.group(1).decode("ascii").lower()
-            "".encode(candidate)
-            return candidate
-        except (LookupError, UnicodeDecodeError):
-            pass
-    return "utf-8"
 
 
 def _is_listable_dir(entry: os.DirEntry[str]) -> bool:
