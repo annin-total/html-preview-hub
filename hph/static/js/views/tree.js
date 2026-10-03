@@ -20,7 +20,6 @@ const CARET =
 export function createTreeView({ store, dom, onOpenFile }) {
   const list = createVirtualList({
     scroller: dom.scroller,
-    viewport: dom.viewport,
     spacer: dom.spacer,
     rowsHost: dom.rows,
     rowHeight: ROW_HEIGHT,

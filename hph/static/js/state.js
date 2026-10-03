@@ -176,10 +176,6 @@ export class Store {
     return this.favorites.has(fileId);
   }
 
-  isHidden(folderId) {
-    return this.hidden.has(folderId);
-  }
-
   /** ホーム画面に出すフォルダ（検索・非表示・お気に入り絞り込み・並び替えを適用）。 */
   visibleFolders() {
     const terms = this.terms;
@@ -268,13 +264,12 @@ export class Store {
   /** ヘッダー表示用の統計値。 */
   stats() {
     if (!this.index)
-      return { folders: 0, files: 0, hidden: 0, roots: 0, truncated: false };
+      return { folders: 0, files: 0, hidden: 0, truncated: false };
     const hidden = this.folders.filter((f) => this.hidden.has(f.id)).length;
     return {
       folders: this.folders.length - hidden,
       files: this.filesById.size,
       hidden,
-      roots: this.index.roots.length,
       truncated: this.index.truncated,
     };
   }

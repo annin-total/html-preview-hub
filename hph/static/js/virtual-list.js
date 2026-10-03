@@ -4,7 +4,6 @@
  */
 export function createVirtualList({
   scroller,
-  viewport,
   spacer,
   rowsHost,
   rowHeight,
@@ -60,6 +59,5 @@ export function createVirtualList({
       }
       render();
     },
-    viewport,
   };
 }

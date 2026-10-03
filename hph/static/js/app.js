@@ -54,7 +54,6 @@ const treeView = createTreeView({
   store,
   dom: {
     scroller: $("#treeScroller"),
-    viewport: $("#treeViewport"),
     spacer: $("#treeSpacer"),
     rows: $("#treeRows"),
     foot: $("#treeFoot"),

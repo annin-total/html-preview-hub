@@ -1,8 +1,6 @@
 /** DOM とフォーマットの小さなユーティリティ群。 */
 
 export const $ = (selector, scope = document) => scope.querySelector(selector);
-export const $$ = (selector, scope = document) =>
-  Array.from(scope.querySelectorAll(selector));
 
 /** 属性・子要素をまとめて指定できる createElement。 */
 export function el(tag, props = {}, children = []) {
