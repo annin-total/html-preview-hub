@@ -7,6 +7,7 @@ html-preview-hub の HTTP API は、フロントエンド（SPA）が使うた�
 
 | メソッド | パス | 説明 |
 | --- | --- | --- |
+| `GET` | `/api/health` | アプリ名とバージョン。起動済みのインスタンスの判定に使う |
 | `GET` | `/api/index` | フォルダ / ファイル / ルート / ユーザー状態をまとめて返す |
 | `GET` | `/api/index/watch?revision=N` | 変更があるまで待つロングポーリング |
 | `POST` | `/api/rescan` | 手動再スキャン |
@@ -24,6 +25,11 @@ html-preview-hub の HTTP API は、フロントエンド（SPA）が使うた�
 
 JSON を返す API のエラーは `{"error": メッセージ}` を該当ステータス（`400` / `403` / `404` / `500` など）で返します。
 `/raw` と `/api/tex/pdf` はプレビューの iframe にそのまま表示されるため、エラー時も HTML のエラーページを対応するステータスコードで返します。
+
+## 起動確認
+
+- `GET /api/health` — `{"app": "html-preview-hub", "version": バージョン}` を返します。`python -m hph` は起動前に
+  このエンドポイントへ問い合わせ、`app` が一致すれば起動済みとみなして新しく起動しません。
 
 ## インデックスと監視
 
