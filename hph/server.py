@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import mimetypes
 import os
 import re
-import threading
-import time
 import webbrowser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .config import APP_NAME, Config, ConfigError, default_state_dir
 from .index import IndexService
-from .instance import HEALTH_PATH, PortState, probe
+from .instance import HEALTH_PATH
 from .paths import PathAccessError, resolve_within_root
 from .scanner import META_CHARSET_RE, FileEntry, detect_charset, kind_of
 from .store import UserStore
@@ -31,16 +28,12 @@ from .tex import available_engines, has_dvipdfmx, has_latexmk
 from .tex import cached_pdf as cached_tex_pdf
 from .texjobs import TexJob, TexJobRegistry
 
-logger = logging.getLogger(__name__)
-
 STATIC_DIR = Path(__file__).parent / "static"
 RAW_PREFIX = "/raw"
 # 停止時、uvicorn は処理中のリクエストを最大 SHUTDOWN_TIMEOUT_SECONDS 待ってから取り消す
 # （取り消すとトレースバックが出る）。ロングポーリングはそれより短く保留し、待機中に自然に返るようにする。
 WATCH_TIMEOUT_SECONDS = 4.0
 SHUTDOWN_TIMEOUT_SECONDS = 5
-BROWSER_WAIT_SECONDS = 120.0
-BROWSER_POLL_SECONDS = 0.3
 SOURCE_MAX_BYTES = 2 * 1024 * 1024
 DIRECTORY_INDEX_NAMES = ("index.html", "index.htm")
 _RAW_REFERER_RE = re.compile(rf"{RAW_PREFIX}/([0-9a-f]+)/")
@@ -436,28 +429,3 @@ def _file_error(message: str, status_code: int) -> HTMLResponse:
 </style></head>
 <body><div class="box"><h1>プレビューを表示できません</h1><p>{safe}</p></div></body></html>"""
     return HTMLResponse(body, status_code=status_code, headers={"Cache-Control": "no-store"})
-
-
-def open_browser(url: str) -> None:
-    """既定のブラウザで開く。開けなくても起動は続ける。"""
-    try:
-        webbrowser.open(url)
-    except Exception:  # pragma: no cover - 環境依存
-        logger.debug("ブラウザを自動起動できませんでした", exc_info=True)
-
-
-def open_browser_when_ready(url: str, host: str, port: int) -> threading.Thread:
-    """サーバーが応答し始めてからブラウザを開く（初回スキャン中に開くと接続エラーの画面になるため）。"""
-
-    def _wait_and_open() -> None:
-        deadline = time.monotonic() + BROWSER_WAIT_SECONDS
-        while probe(host, port) is not PortState.RUNNING:
-            if time.monotonic() > deadline:
-                logger.warning("サーバーが応答しないため、ブラウザを開きませんでした")
-                return
-            time.sleep(BROWSER_POLL_SECONDS)
-        open_browser(url)
-
-    thread = threading.Thread(target=_wait_and_open, daemon=True)
-    thread.start()
-    return thread

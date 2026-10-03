@@ -27,6 +27,7 @@ html-preview-hub/
 │   ├── __main__.py           # CLI エントリポイント（python -m hph）
 │   ├── config.py             # 設定の読み書き・ルート管理
 │   ├── instance.py           # 起動済みインスタンスの検出（二重起動の防止）
+│   ├── browser.py            # 起動時にブラウザで画面を開く（サーバーの応答を待つ）
 │   ├── scanner.py            # 再帰スキャンとタイトル抽出（HTML / LaTeX）
 │   ├── tex.py                # LaTeX のエンジン判定・コンパイル・キャッシュ
 │   ├── texjobs.py            # LaTeX コンパイルのバックグラウンド実行と状態管理
@@ -56,6 +57,7 @@ html-preview-hub/
 | --- | --- |
 | `config.py` | 設定ファイルの探索・読み書き・ルートフォルダの追加/削除、既定値の一元管理 |
 | `instance.py` | 指定ホスト・ポートが空いているか、html-preview-hub が起動済みか、別のアプリが使用中かを `/api/health` への問い合わせで判定する |
+| `browser.py` | サーバーが `/api/health` に応答するまで別スレッドで待ち、既定のブラウザで画面を開く |
 | `scanner.py` | ルート配下の再帰スキャンと、HTML / LaTeX からのタイトル抽出（`(mtime, size)` キャッシュ付き） |
 | `tex.py` | LaTeX エンジンの判定・コンパイル実行・PDF キャッシュの管理 |
 | `texjobs.py` | コンパイルをバックグラウンドジョブとして実行し、状態を保持する（ファイル単位で相乗り、異なるファイルは並列） |

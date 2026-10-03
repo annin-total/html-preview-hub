@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import hph.__main__ as cli
+import hph.browser as browser
 import hph.server as server
 from hph.config import APP_NAME
 from hph.instance import HEALTH_PATH, PortState, probe
@@ -178,21 +179,21 @@ def test_main_opens_browser_for_running_instance(monkeypatch: pytest.MonkeyPatch
 def test_browser_opens_only_after_server_responds(monkeypatch: pytest.MonkeyPatch) -> None:
     states = iter([PortState.FREE, PortState.FREE, PortState.RUNNING])
     opened: list[str] = []
-    monkeypatch.setattr(server, "probe", lambda host, port: next(states))
-    monkeypatch.setattr(server, "open_browser", opened.append)
-    monkeypatch.setattr(server, "BROWSER_POLL_SECONDS", 0)
-    server.open_browser_when_ready("http://x/", "127.0.0.1", 1).join(timeout=5)
+    monkeypatch.setattr(browser, "probe", lambda host, port: next(states))
+    monkeypatch.setattr(browser, "open_browser", opened.append)
+    monkeypatch.setattr(browser, "BROWSER_POLL_SECONDS", 0)
+    browser.open_browser_when_ready("http://x/", "127.0.0.1", 1).join(timeout=5)
     assert opened == ["http://x/"]
     assert next(states, None) is None
 
 
 def test_browser_gives_up_when_server_never_responds(monkeypatch: pytest.MonkeyPatch) -> None:
     opened: list[str] = []
-    monkeypatch.setattr(server, "probe", lambda host, port: PortState.FREE)
-    monkeypatch.setattr(server, "open_browser", opened.append)
-    monkeypatch.setattr(server, "BROWSER_POLL_SECONDS", 0)
-    monkeypatch.setattr(server, "BROWSER_WAIT_SECONDS", 0.05)
-    thread = server.open_browser_when_ready("http://x/", "127.0.0.1", 1)
+    monkeypatch.setattr(browser, "probe", lambda host, port: PortState.FREE)
+    monkeypatch.setattr(browser, "open_browser", opened.append)
+    monkeypatch.setattr(browser, "BROWSER_POLL_SECONDS", 0)
+    monkeypatch.setattr(browser, "BROWSER_WAIT_SECONDS", 0.05)
+    thread = browser.open_browser_when_ready("http://x/", "127.0.0.1", 1)
     thread.join(timeout=5)
     assert not thread.is_alive()
     assert opened == []
