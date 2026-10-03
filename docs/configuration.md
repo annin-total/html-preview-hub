@@ -64,7 +64,6 @@ cp config.example.json config.json
 | `--save` | ルートフォルダ（引数・`HPH_ROOTS` の分も含む）を設定ファイルへ保存 |
 | `--host` / `--port` | バインド先（既定 `127.0.0.1:8765`） |
 | `--no-browser` | 起動時にブラウザを開かない |
-| `--reload` | 開発用オートリロード |
 | `--log-level` | uvicorn のログレベル（既定 `info`） |
 | `--pause-on-exit SECONDS` | 終了前に指定秒数待ってから終了する。エラー終了のときは Enter キーを待つ。デスクトップのアイコンから起動したとき、ウインドウが閉じる前にメッセージを読めるようにするためのもの |
 | `--version` | バージョンを表示して終了 |
