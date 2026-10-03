@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import hph.__main__ as cli
+import hph.server as server
 from hph.config import APP_NAME
 from hph.instance import HEALTH_PATH, PortState, probe
 
@@ -149,3 +150,33 @@ def test_pause_on_exit_after_uvicorn_exits(
     monkeypatch.setattr(cli.uvicorn, "run", fail)
     assert run_cli(PortState.FREE, "--pause-on-exit", "3") == (1, [])
     assert len(prompts) == 1
+
+
+def test_main_opens_browser_for_running_instance(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    opened: list[str] = []
+    monkeypatch.delenv("HPH_ROOTS", raising=False)
+    monkeypatch.setattr(cli, "probe", lambda host, port: PortState.RUNNING)
+    monkeypatch.setattr(cli, "open_browser", opened.append)
+    assert cli.main(["-c", str(tmp_path / "config.json"), "--port", "8899"]) == cli.EXIT_ALREADY_RUNNING
+    assert opened == ["http://127.0.0.1:8899/"]
+
+
+def test_browser_opens_only_after_server_responds(monkeypatch: pytest.MonkeyPatch) -> None:
+    states = iter([PortState.FREE, PortState.FREE, PortState.RUNNING])
+    opened: list[str] = []
+    monkeypatch.setattr(server, "probe", lambda host, port: next(states))
+    monkeypatch.setattr(server, "open_browser", opened.append)
+    monkeypatch.setattr(server, "BROWSER_POLL_SECONDS", 0)
+    server.open_browser_when_ready("http://x/", "127.0.0.1", 1).join(timeout=5)
+    assert opened == ["http://x/"]
+    assert next(states, None) is None
+
+
+def test_browser_gives_up_when_server_never_responds(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr(server, "probe", lambda host, port: PortState.FREE)
+    monkeypatch.setattr(server, "open_browser", opened.append)
+    monkeypatch.setattr(server, "BROWSER_POLL_SECONDS", 0)
+    monkeypatch.setattr(server, "BROWSER_WAIT_SECONDS", 0.05)
+    server.open_browser_when_ready("http://x/", "127.0.0.1", 1).join(timeout=5)
+    assert opened == []

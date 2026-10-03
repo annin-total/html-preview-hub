@@ -14,7 +14,7 @@ import uvicorn
 from . import __version__
 from .config import Config, ConfigError
 from .instance import PortState, probe
-from .server import create_app, open_browser_later
+from .server import create_app, open_browser, open_browser_when_ready
 
 EXIT_CONFIG_ERROR = 2
 EXIT_ALREADY_RUNNING = 3
@@ -87,7 +87,7 @@ def _run(args: argparse.Namespace) -> int:
         print(f"html-preview-hub はすでに起動しています → {url}")
         if config.open_browser:
             print("起動中の画面をブラウザで開きます。")
-            open_browser_later(url, delay=0)
+            open_browser(url)
         return EXIT_ALREADY_RUNNING
     if state is PortState.OCCUPIED:
         print(
@@ -111,7 +111,7 @@ def _run(args: argparse.Namespace) -> int:
         print(f"  - {root.name}: {root.path}{missing}")
     print(STOP_GUIDE)
     if config.open_browser:
-        open_browser_later(url)
+        open_browser_when_ready(url, config.host, config.port)
 
     app = create_app(config)
     uvicorn.run(app, host=config.host, port=config.port, log_level=args.log_level, access_log=False)

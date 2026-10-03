@@ -7,6 +7,8 @@ import logging
 import mimetypes
 import os
 import re
+import threading
+import time
 import webbrowser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -21,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .config import APP_NAME, Config, ConfigError, default_state_dir
 from .index import IndexService
-from .instance import HEALTH_PATH
+from .instance import HEALTH_PATH, PortState, probe
 from .paths import PathAccessError, resolve_within_root
 from .scanner import kind_of
 from .store import UserStore
@@ -34,6 +36,8 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 RAW_PREFIX = "/raw"
 WATCH_TIMEOUT_SECONDS = 25.0
+BROWSER_WAIT_SECONDS = 120.0
+BROWSER_POLL_SECONDS = 0.3
 SOURCE_MAX_BYTES = 2 * 1024 * 1024
 DIRECTORY_INDEX_NAMES = ("index.html", "index.htm")
 _META_CHARSET_RE = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([a-zA-Z0-9_\-]+)""", re.IGNORECASE)
@@ -460,14 +464,26 @@ def _file_error(message: str, status_code: int) -> HTMLResponse:
     return HTMLResponse(body, status_code=status_code, headers={"Cache-Control": "no-store"})
 
 
-def open_browser_later(url: str, delay: float = 1.0) -> None:
-    """起動直後にブラウザを開く（サーバー起動を妨げないよう別スレッドで）。"""
-    import threading
+def open_browser(url: str) -> None:
+    """既定のブラウザで開く。開けなくても起動は続ける。"""
+    try:
+        webbrowser.open(url)
+    except Exception:  # pragma: no cover - 環境依存
+        logger.debug("ブラウザを自動起動できませんでした", exc_info=True)
 
-    def _open() -> None:
-        try:
-            webbrowser.open(url)
-        except Exception:  # pragma: no cover - 環境依存
-            logger.debug("ブラウザを自動起動できませんでした", exc_info=True)
 
-    threading.Timer(delay, _open).start()
+def open_browser_when_ready(url: str, host: str, port: int) -> threading.Thread:
+    """サーバーが応答し始めてからブラウザを開く（初回スキャン中に開くと接続エラーの画面になるため）。"""
+
+    def _wait_and_open() -> None:
+        deadline = time.monotonic() + BROWSER_WAIT_SECONDS
+        while probe(host, port) is not PortState.RUNNING:
+            if time.monotonic() > deadline:
+                logger.warning("サーバーが応答しないため、ブラウザを開きませんでした")
+                return
+            time.sleep(BROWSER_POLL_SECONDS)
+        open_browser(url)
+
+    thread = threading.Thread(target=_wait_and_open, daemon=True)
+    thread.start()
+    return thread
