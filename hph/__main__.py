@@ -18,9 +18,11 @@ from .server import create_app, open_browser, open_browser_when_ready
 
 EXIT_CONFIG_ERROR = 2
 EXIT_ALREADY_RUNNING = 3
+# ブラウザのロングポーリングを待ち切らずに打ち切る秒数（打ち切っても lifespan の後始末は行われる）
+SHUTDOWN_TIMEOUT_SECONDS = 5
 STOP_GUIDE = (
     "停止するには、このウインドウで Ctrl+C を 1 回だけ押してください。\n"
-    "停止処理には少し時間がかかります（最大 30 秒ほど）。"
+    "停止処理には少し時間がかかります（通常は数秒）。"
     "Ctrl+C を 2 回押すと強制終了になるため、押さずにそのままお待ちください。"
 )
 
@@ -56,8 +58,10 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=args.log_level.upper(), format="%(levelname)s %(name)s: %(message)s")
     try:
         code = _run(args)
-    except SystemExit as exc:  # uvicorn はポートを確保できないと sys.exit(1) する
-        code = exc.code if isinstance(exc.code, int) else 1
+    except SystemExit as exc:
+        # uvicorn は起動に失敗すると sys.exit する。終了コードは版で異なり、
+        # 3（起動済み）と衝突しうるため 1 に揃える
+        code = 0 if exc.code in (0, None) else 1
     if args.pause_on_exit > 0:
         _pause_before_exit(code, args.pause_on_exit)
     return code
@@ -114,7 +118,14 @@ def _run(args: argparse.Namespace) -> int:
         open_browser_when_ready(url, config.host, config.port)
 
     app = create_app(config)
-    uvicorn.run(app, host=config.host, port=config.port, log_level=args.log_level, access_log=False)
+    uvicorn.run(
+        app,
+        host=config.host,
+        port=config.port,
+        log_level=args.log_level,
+        access_log=False,
+        timeout_graceful_shutdown=SHUTDOWN_TIMEOUT_SECONDS,
+    )
     print("停止しました。")
     return 0
 

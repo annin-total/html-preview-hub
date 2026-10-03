@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from conftest import WRITE_PDF
 
 from hph.config import Config

@@ -139,11 +139,21 @@ def test_pause_on_exit(
     assert len(prompts) == expected_input
 
 
+def test_main_bounds_graceful_shutdown(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.delenv("HPH_ROOTS", raising=False)
+    monkeypatch.setattr(cli, "probe", lambda host, port: PortState.FREE)
+    monkeypatch.setattr(cli, "create_app", lambda config: object())
+    monkeypatch.setattr(cli.uvicorn, "run", lambda *_, **kw: calls.append(kw))
+    assert cli.main(["-c", str(tmp_path / "config.json"), "--no-browser"]) == 0
+    assert calls[0]["timeout_graceful_shutdown"] == cli.SHUTDOWN_TIMEOUT_SECONDS
+
+
 def test_pause_on_exit_after_uvicorn_exits(
     run_cli: Callable[..., tuple[int, list[int]]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def fail(*_: object, **__: object) -> None:
-        raise SystemExit(1)
+        raise SystemExit(cli.EXIT_ALREADY_RUNNING)  # uvicorn 0.50 以降は起動失敗を 3 で返す
 
     prompts: list[str] = []
     monkeypatch.setattr("builtins.input", prompts.append)

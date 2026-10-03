@@ -165,7 +165,7 @@ def _tex_file_id(client: TestClient) -> str:
     return next(f["id"] for f in _index(client)["files"] if f["relPath"] == "beta/paper.tex")
 
 
-def _install_stub_engines(install_tex_stub, **kwargs) -> None:
+def _install_stub_engines(install_tex_stub, **kwargs: object) -> None:
     """自動選択がどのエンジンを選んでもスタブが使われるようにする。"""
     for name in ("pdflatex", "lualatex", "xelatex"):
         install_tex_stub(name, **kwargs)
