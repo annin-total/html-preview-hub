@@ -73,6 +73,10 @@ def _command() -> list[str] | None:
         ]
     if sys.platform == "win32" and shutil.which("powershell"):
         return ["powershell", "-NoProfile", "-STA", "-Command", _WINDOWS_SCRIPT]
+    if sys.platform not in ("darwin", "win32") and not (
+        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+    ):
+        return None  # 表示環境が無いと zenity は取り消しと同じ終了コード 1 で失敗する
     if shutil.which("zenity"):
         return ["zenity", "--file-selection", "--directory", f"--title={PICK_PROMPT}"]
     if shutil.which("kdialog"):

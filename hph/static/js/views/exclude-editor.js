@@ -136,7 +136,7 @@ export function createExcludeEditor({
         type: "button",
         "aria-label": `「${sentence(rule)}」を削除`,
         text: "✕",
-        disabled: item.pending,
+        disabled: item.pending || busy,
         onclick: () => remove(item),
       }),
     ]);

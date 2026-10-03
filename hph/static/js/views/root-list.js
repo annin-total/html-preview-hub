@@ -30,6 +30,7 @@ export function createRootList({
   const adder = createRootAdder({
     api,
     onNotify,
+    hasRoot: (id) => roots.some((root) => root.id === id),
     onAdded: async () => {
       await onChanged();
       await reload();

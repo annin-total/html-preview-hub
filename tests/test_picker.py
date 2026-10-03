@@ -57,7 +57,16 @@ def test_failure_is_unavailable(monkeypatch: pytest.MonkeyPatch, fake_run: None)
 
 def test_no_tool_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(picker.sys, "platform", "linux")
+    monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setattr(picker.shutil, "which", lambda name: None)
+    assert picker.pick_folder().status == "unavailable"
+
+
+def test_linux_without_display_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(picker.sys, "platform", "linux")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setattr(picker.shutil, "which", lambda name: f"/usr/bin/{name}")
     assert picker.pick_folder().status == "unavailable"
 
 
@@ -66,6 +75,7 @@ def test_no_tool_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
 )
 def test_command_per_platform(monkeypatch: pytest.MonkeyPatch, platform: str, tool: str) -> None:
     seen: list[list[str]] = []
+    monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setattr(picker.sys, "platform", platform)
     monkeypatch.setattr(picker.shutil, "which", lambda name: f"/bin/{name}")
     monkeypatch.setattr(picker.subprocess, "run", lambda cmd, **_: seen.append(cmd) or _completed(0, b"/x"))
@@ -119,6 +129,7 @@ def test_endpoint_returns_result_and_rejects_second(
 
 def _linux(monkeypatch: pytest.MonkeyPatch, result: object) -> None:
     monkeypatch.setattr(picker.sys, "platform", "linux")
+    monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setattr(picker.shutil, "which", lambda name: f"/usr/bin/{name}")
     _use(monkeypatch, result)
 
@@ -136,6 +147,7 @@ def test_other_failure_on_linux_is_unavailable(monkeypatch: pytest.MonkeyPatch) 
 def test_kdialog_start_dir_is_expanded(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[list[str]] = []
     monkeypatch.setattr(picker.sys, "platform", "linux")
+    monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setattr(picker.shutil, "which", lambda name: "/bin/kdialog" if name == "kdialog" else None)
     monkeypatch.setattr(picker.subprocess, "run", lambda cmd, **_: seen.append(cmd) or _completed(0, b"/x"))
     picker.pick_folder()

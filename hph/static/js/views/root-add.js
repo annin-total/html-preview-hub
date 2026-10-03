@@ -3,7 +3,7 @@
 import { errorReason } from "../util.js";
 
 /** 待機中・一覧の状態を持ち、変わるたびに onUpdate(focus) で再描画を頼む（focus は "add" | "browser" | null）。 */
-export function createRootAdder({ api, onNotify, onAdded, onUpdate }) {
+export function createRootAdder({ api, onNotify, onAdded, onUpdate, hasRoot }) {
   let picking = false;
   let browser = null;
 
@@ -35,7 +35,11 @@ export function createRootAdder({ api, onNotify, onAdded, onUpdate }) {
   async function add(path) {
     try {
       const result = await api.addRoot(path);
-      onNotify(`${result.root.name} を追加しました`);
+      onNotify(
+        hasRoot(result.root.id)
+          ? `${result.root.name} はすでに登録されています`
+          : `${result.root.name} を追加しました`,
+      );
     } catch (error) {
       onNotify(`追加できません: ${errorReason(error)}`);
       return false;
