@@ -20,6 +20,10 @@ const SHORTCUTS = [
 ];
 const LABEL_STYLE = "flex:0 0 210px;font-size:12px;color:var(--text-dim)";
 
+// 空欄は送らない（undefined は JSON から落ちるので、今の値が保たれる）
+const parseNumber = (value) =>
+  value.trim() === "" ? undefined : Number(value);
+
 const parseList = (value) =>
   value
     .split(",")
@@ -33,9 +37,14 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
   let texStatus = null;
 
   async function refresh() {
-    const payload = await api.config();
-    config = payload.config;
-    dom.configPathHint.textContent = payload.configPath;
+    try {
+      const payload = await api.config();
+      config = payload.config;
+      dom.configPathHint.textContent = payload.configPath;
+    } catch (error) {
+      onNotify(`設定を読み込めません: ${error.message}`);
+      return;
+    }
     texStatus = await api.texStatus().catch(() => null);
     render();
   }
@@ -56,7 +65,12 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
           type: "button",
           text: "削除",
           onclick: async () => {
-            await api.removeRoot(root.id);
+            try {
+              await api.removeRoot(root.id);
+            } catch (error) {
+              onNotify(`削除できません: ${error.message}`);
+              return;
+            }
             onNotify(`${root.name} を削除しました`);
             await onChanged();
             refresh();
@@ -166,13 +180,13 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
         "tex_timeout_seconds",
         "コンパイルのタイムアウト（秒）",
         String,
-        (v) => Number(v),
+        parseNumber,
       ],
       [
         "tex_max_passes",
         "コンパイル回数（latexmk 未使用時）",
         String,
-        (v) => Number(v),
+        parseNumber,
       ],
     ];
     const { rows, button } = fieldForm(fields, "LaTeX 設定を保存");
@@ -257,12 +271,12 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
         (v) => v.join(", "),
         parseList,
       ],
-      ["max_depth", "最大階層", String, (v) => Number(v)],
+      ["max_depth", "最大階層", String, parseNumber],
       [
         "watch_interval_seconds",
         "自動再スキャン間隔（秒 / 0 で無効）",
         String,
-        (v) => Number(v),
+        parseNumber,
       ],
     ];
     const { rows, button } = fieldForm(fields, "スキャン設定を保存");
