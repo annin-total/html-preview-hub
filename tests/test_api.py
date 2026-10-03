@@ -264,9 +264,7 @@ def test_compile_does_not_block_other_requests(client: TestClient, install_tex_s
     assert _poll_job(client, file_id)["status"] == "ok"
 
 
-def test_repeated_compile_shares_running_job(
-    client: TestClient, install_tex_stub, tmp_path: Path
-) -> None:
+def test_repeated_compile_shares_running_job(client: TestClient, install_tex_stub, tmp_path: Path) -> None:
     """実行中に同じファイルの要求が重なっても、エンジンは 1 回しか動かさない。"""
     counter = tmp_path / "runs.txt"
     _install_stub_engines(install_tex_stub, body=f'printf x >> "{counter}"\nsleep 1\n{WRITE_PDF}')

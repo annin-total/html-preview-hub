@@ -361,9 +361,7 @@ def _tex_job_body(file_id: str, job: TexJob) -> dict[str, Any]:
     body = job.to_json()
     if body.get("status") == "ok":
         fingerprint = str(body.get("fingerprint", ""))
-        body["pdfUrl"] = (
-            f"/api/tex/pdf?fileId={quote(file_id, safe='')}&v={quote(fingerprint, safe='')}"
-        )
+        body["pdfUrl"] = f"/api/tex/pdf?fileId={quote(file_id, safe='')}&v={quote(fingerprint, safe='')}"
     return body
 
 

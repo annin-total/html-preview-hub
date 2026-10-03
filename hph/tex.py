@@ -405,8 +405,7 @@ def _build_commands(
     if font_fallback:
         argument = f"{_font_fallback_directive()}\\input{{{name}}}"
         return [
-            [engine.command, *common, f"-jobname={tex.stem}", argument]
-            for _ in range(config.tex_max_passes)
+            [engine.command, *common, f"-jobname={tex.stem}", argument] for _ in range(config.tex_max_passes)
         ]
 
     if engine.via_dvi:
