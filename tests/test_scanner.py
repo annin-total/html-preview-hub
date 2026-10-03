@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from hph.config import Config
+from hph.rules import ExcludeRule
 from hph.scanner import TitleCache, extract_tex_title, extract_title, kind_of, scan
 
 
@@ -96,3 +97,23 @@ def test_nested_roots_do_not_duplicate_the_same_path(config: Config, tree: Path)
     ]
     assert all(file.root_id == config.roots[0].id for file in result.files)
     assert len(result.folders) == 2
+
+
+def test_global_and_root_rules_exclude_together(config: Config, tree: Path) -> None:
+    (tree / "Drafts").mkdir()
+    (tree / "Drafts" / "wip.html").write_text("<title>wip</title>", encoding="utf-8")
+    config.exclude = (*config.exclude, ExcludeRule("folder", "contains", "draft"))
+    root = config.roots[0]
+    config.update_root(root.id, exclude=(ExcludeRule("file", "prefix", "NO-"),))
+    names = {f.name for f in scan(config).files}
+    assert "wip.html" not in names  # 全体のルール（大文字・小文字を区別しない）
+    assert "no-title.html" not in names  # フォルダのルール
+    assert "ignored.html" not in names  # 既定の除外（node_modules）
+    assert {"index.html", "broken.html"} <= names
+
+
+def test_folder_rule_applies_at_any_depth(config: Config, tree: Path) -> None:
+    (tree / "alpha" / "deep" / "tmp").mkdir(parents=True)
+    (tree / "alpha" / "deep" / "tmp" / "x.html").write_text("<title>x</title>", encoding="utf-8")
+    config.exclude = (ExcludeRule("folder", "equals", "TMP"),)
+    assert "x.html" not in {f.name for f in scan(config).files}

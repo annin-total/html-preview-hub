@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from hph.config import Config, ConfigError
+from hph.rules import ExcludeRule
 
 
 def test_defaults_applied_for_missing_keys(tmp_path: Path) -> None:
@@ -51,3 +52,55 @@ def test_invalid_json_reports_clear_error(tmp_path: Path) -> None:
 def test_extensions_are_normalised() -> None:
     config = Config.from_dict({"include_extensions": ["HTML", ".Htm", ""]})
     assert config.include_extensions == [".html", ".htm"]
+
+
+def test_default_exclude_contains_former_ignore_dirs() -> None:
+    config = Config.from_dict({})
+    assert ExcludeRule("folder", "equals", "node_modules") in config.exclude
+
+
+def test_legacy_ignore_dirs_replace_defaults() -> None:
+    config = Config.from_dict({"ignore_dirs": ["vendor"]})
+    assert config.exclude == (ExcludeRule("folder", "equals", "vendor"),)
+
+
+def test_legacy_ignore_dirs_merge_into_exclude() -> None:
+    raw = {"exclude": [{"target": "file", "match": "suffix", "value": ".bak"}], "ignore_dirs": ["vendor"]}
+    config = Config.from_dict(raw)
+    assert config.exclude == (
+        ExcludeRule("file", "suffix", ".bak"),
+        ExcludeRule("folder", "equals", "vendor"),
+    )
+
+
+def test_save_writes_exclude_not_ignore_dirs(tmp_path: Path) -> None:
+    (tmp_path / "docs").mkdir()
+    config = Config.from_dict({"ignore_dirs": ["vendor"]})
+    config.path = tmp_path / "config.json"
+    root = config.add_root(tmp_path / "docs")
+    config.update_root(root.id, exclude=(ExcludeRule("folder", "contains", "draft"),))
+    config.save()
+    saved = json.loads(config.path.read_text(encoding="utf-8"))
+    assert "ignore_dirs" not in saved
+    assert saved["exclude"] == [{"target": "folder", "match": "equals", "value": "vendor"}]
+    assert saved["roots"][0]["exclude"] == [{"target": "folder", "match": "contains", "value": "draft"}]
+    reloaded = Config.load(config.path)
+    assert reloaded.roots[0].exclude == (ExcludeRule("folder", "contains", "draft"),)
+
+
+def test_update_root_keeps_name_when_blank(tmp_path: Path) -> None:
+    (tmp_path / "docs").mkdir()
+    config = Config.from_dict({})
+    root = config.add_root(tmp_path / "docs", "資料")
+    updated = config.update_root(root.id, name="  ")
+    assert updated is not None and updated.name == "資料"
+    assert config.update_root("missing", name="x") is None
+
+
+def test_invalid_exclude_in_file_is_config_error(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps({"exclude": [{"target": "x", "match": "equals", "value": "a"}]}), encoding="utf-8"
+    )
+    with pytest.raises(ConfigError):
+        Config.load(path)

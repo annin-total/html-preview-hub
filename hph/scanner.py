@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import Config, Root
+from .rules import is_excluded
 
 _TITLE_RE = re.compile(rb"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _H1_RE = re.compile(rb"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
@@ -327,7 +328,7 @@ def _walk_root(
 ) -> Iterable[tuple[Path, str, os.stat_result]]:
     """ルート配下を幅優先で走査し (実パス, 相対パス, stat) を返す。"""
     base = root.real_path
-    ignore_dirs = set(config.ignore_dirs)
+    rules = (*config.exclude, *root.exclude)
     stack: list[tuple[Path, int]] = [(base, 0)]
     while stack:
         current, depth = stack.pop()
@@ -353,9 +354,11 @@ def _walk_root(
             except OSError:
                 continue
             if is_dir:
-                if name in ignore_dirs or depth + 1 > config.max_depth:
+                if is_excluded(name, "folder", rules) or depth + 1 > config.max_depth:
                     continue
                 stack.append((path, depth + 1))
+                continue
+            if is_excluded(name, "file", rules):
                 continue
             try:
                 if not entry.is_file(follow_symlinks=config.follow_symlinks):

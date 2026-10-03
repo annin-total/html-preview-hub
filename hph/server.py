@@ -145,7 +145,7 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
 
     @app.patch("/api/roots/{root_id}")
     async def rename_root(root_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
-        root = config.rename_root(root_id, str(payload.get("name", "")))
+        root = config.update_root(root_id, name=str(payload.get("name", "")))
         if root is None:
             return _error("ルートが見つかりません", 404)
         config.save()
