@@ -49,6 +49,13 @@ const assert = require("assert");
     favLabel.includes("(1)"),
     "favorite count should be 1, got " + favLabel,
   );
+  // 修飾キー付き（ブラウザのショートカット）では反応しない
+  await page.keyboard.press("Control+f");
+  await page.waitForTimeout(1200);
+  assert(
+    (await page.textContent("#favoritesLabel")).includes("(1)"),
+    "Ctrl/⌘ + f must not toggle favorite",
+  );
 
   // 2. Esc でホームへ戻る
   await page.keyboard.press("Escape");

@@ -352,7 +352,8 @@ document.addEventListener("keydown", (event) => {
     if (app.dataset.view === "preview") navigateHome();
     return;
   }
-  if (typing) return;
+  // 修飾キー付きはブラウザのショートカット（⌘F・⌘T など）なので奪わない
+  if (typing || meta || event.altKey) return;
 
   switch (event.key) {
     case "/":
