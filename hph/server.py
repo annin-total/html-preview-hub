@@ -35,7 +35,10 @@ logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
 RAW_PREFIX = "/raw"
-WATCH_TIMEOUT_SECONDS = 25.0
+# 停止時、uvicorn は処理中のリクエストを最大 SHUTDOWN_TIMEOUT_SECONDS 待ってから取り消す
+# （取り消すとトレースバックが出る）。ロングポーリングはそれより短く保留し、待機中に自然に返るようにする。
+WATCH_TIMEOUT_SECONDS = 4.0
+SHUTDOWN_TIMEOUT_SECONDS = 5
 BROWSER_WAIT_SECONDS = 120.0
 BROWSER_POLL_SECONDS = 0.3
 SOURCE_MAX_BYTES = 2 * 1024 * 1024

@@ -146,7 +146,11 @@ def test_main_bounds_graceful_shutdown(monkeypatch: pytest.MonkeyPatch, tmp_path
     monkeypatch.setattr(cli, "create_app", lambda config: object())
     monkeypatch.setattr(cli.uvicorn, "run", lambda *_, **kw: calls.append(kw))
     assert cli.main(["-c", str(tmp_path / "config.json"), "--no-browser"]) == 0
-    assert calls[0]["timeout_graceful_shutdown"] == cli.SHUTDOWN_TIMEOUT_SECONDS
+    assert calls[0]["timeout_graceful_shutdown"] == server.SHUTDOWN_TIMEOUT_SECONDS
+
+
+def test_long_poll_returns_before_shutdown_timeout() -> None:
+    assert server.WATCH_TIMEOUT_SECONDS < server.SHUTDOWN_TIMEOUT_SECONDS
 
 
 def test_pause_on_exit_after_uvicorn_exits(

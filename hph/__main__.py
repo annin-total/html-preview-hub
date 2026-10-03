@@ -14,12 +14,10 @@ import uvicorn
 from . import __version__
 from .config import Config, ConfigError
 from .instance import PortState, probe
-from .server import create_app, open_browser, open_browser_when_ready
+from .server import SHUTDOWN_TIMEOUT_SECONDS, create_app, open_browser, open_browser_when_ready
 
 EXIT_CONFIG_ERROR = 2
 EXIT_ALREADY_RUNNING = 3
-# ブラウザのロングポーリングを待ち切らずに打ち切る秒数（打ち切っても lifespan の後始末は行われる）
-SHUTDOWN_TIMEOUT_SECONDS = 5
 STOP_GUIDE = (
     "停止するには、このウインドウで Ctrl+C を 1 回だけ押してください。\n"
     "停止処理には少し時間がかかります（通常は数秒）。"
