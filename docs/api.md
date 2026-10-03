@@ -39,7 +39,7 @@ JSON を返す API のエラーは `{"error": メッセージ}` を該当ステ�
   - `folders` / `files` — フォルダ / ファイルの一覧
   - `stats` — 件数などの集計
   - `userState` — お気に入り・非表示フォルダ・履歴
-- `GET /api/index/watch?revision=N` — クエリで渡した `revision` より新しい変更が起きるか、タイムアウト（約 25 秒）するまで応答を保留するロングポーリングです。`{"revision": N, "changed": bool}` を返します。
+- `GET /api/index/watch?revision=N` — クエリで渡した `revision` より新しい変更が起きるか、タイムアウト（約 4 秒）するまで応答を保留するロングポーリングです。`{"revision": N, "changed": bool}` を返します。
 - `POST /api/rescan` — バックグラウンドの自動スキャンとは別に、即座に再スキャンして最新のインデックスを返します。
 
 ## 設定とルート
