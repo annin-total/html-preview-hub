@@ -7,6 +7,7 @@ html-preview-hub の HTTP API は、フロントエンド（SPA）が使うた�
 
 | メソッド | パス | 説明 |
 | --- | --- | --- |
+| `GET` | `/api/health` | アプリ名とバージョン。起動済みのインスタンスの判定に使う |
 | `GET` | `/api/index` | フォルダ / ファイル / ルート / ユーザー状態をまとめて返す |
 | `GET` | `/api/index/watch?revision=N` | 変更があるまで待つロングポーリング |
 | `POST` | `/api/rescan` | 手動再スキャン |
@@ -25,6 +26,11 @@ html-preview-hub の HTTP API は、フロントエンド（SPA）が使うた�
 JSON を返す API のエラーは `{"error": メッセージ}` を該当ステータス（`400` / `403` / `404` / `500` など）で返します。
 `/raw` と `/api/tex/pdf` はプレビューの iframe にそのまま表示されるため、エラー時も HTML のエラーページを対応するステータスコードで返します。
 
+## 起動確認
+
+- `GET /api/health` — `{"app": "html-preview-hub", "version": バージョン}` を返します。`python -m hph` は起動前に
+  このエンドポイントへ問い合わせ、`app` が一致すれば起動済みとみなして新しく起動しません。
+
 ## インデックスと監視
 
 - `GET /api/index` — インデックスの全量を返します。主な項目は次のとおりです。
@@ -33,7 +39,7 @@ JSON を返す API のエラーは `{"error": メッセージ}` を該当ステ�
   - `folders` / `files` — フォルダ / ファイルの一覧
   - `stats` — 件数などの集計
   - `userState` — お気に入り・非表示フォルダ・履歴
-- `GET /api/index/watch?revision=N` — クエリで渡した `revision` より新しい変更が起きるか、タイムアウト（約 25 秒）するまで応答を保留するロングポーリングです。`{"revision": N, "changed": bool}` を返します。
+- `GET /api/index/watch?revision=N` — クエリで渡した `revision` より新しい変更が起きるか、タイムアウト（約 4 秒）するまで応答を保留するロングポーリングです。`{"revision": N, "changed": bool}` を返します。
 - `POST /api/rescan` — バックグラウンドの自動スキャンとは別に、即座に再スキャンして最新のインデックスを返します。
 
 ## 設定とルート

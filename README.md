@@ -60,6 +60,24 @@ sudo apt install texlive-lang-japanese texlive-luatex texlive-latex-extra
 
 引数（取り込み対象パス）を省略すると `config.json`（無ければ同梱の `sample-docs/`）を対象に起動します。
 
+### デスクトップのアイコンから起動する
+
+最初に一度だけ導入スクリプトを実行すると、仮想環境の準備とデスクトップへのアイコン配置が行われます。
+以降はアイコンをダブルクリックするだけで起動し、ブラウザが自動で開きます。
+
+| OS | 導入スクリプト | デスクトップに置かれるもの |
+| --- | --- | --- |
+| macOS | `./launcher/macos/install.sh` | エイリアス `html-preview-hub`（Terminal で起動） |
+| Windows | `launcher\windows\install.cmd` をダブルクリック | ショートカット `html-preview-hub.lnk`（コンソールで起動） |
+
+- **停止**: 開いたウインドウで `Ctrl+C` を **1 回だけ**押します。停止処理には数秒かかります。
+  2 回押すと後始末を省いた強制終了になるため、ウインドウが閉じるまで待ってください。停止するとウインドウは自動で閉じます。
+- **起動中にもう一度押した場合**: 新しくは起動せず、「すでに起動しています」と表示して起動中の画面をブラウザで開き、
+  ウインドウは数秒で閉じます。
+- 依存パッケージを更新したとき、またはリポジトリを移動したときは導入スクリプトを再実行します（既存のアイコンは置き換わります）。
+- macOS では初回に「ターミナルが Finder を制御する」許可を求められます。エイリアスの作成に必要です。
+- Windows 版は Windows 実機で動作確認していません。
+
 ### 手動で行う場合
 
 ```bash
@@ -76,7 +94,8 @@ python -m hph
 python -m hph ~/Documents/html --port 9000 --host 127.0.0.1 --no-browser
 ```
 
-起動すると `http://127.0.0.1:8765/` が開きます。対象フォルダは起動後に画面右上の ⚙ からも追加できます。
+起動すると、サーバーが応答し始めた時点で `http://127.0.0.1:8765/` が開きます。
+同じホスト・ポートで起動済みの場合は新しく起動せず、起動中の画面を開いて終了します。対象フォルダは起動後に画面右上の ⚙ からも追加できます。
 コマンドライン引数と設定ファイルの詳細は [docs/configuration.md](docs/configuration.md) を参照してください。
 
 ## キャッシュ削除
@@ -102,7 +121,7 @@ rm -rf ~/.local/state/html-preview-hub/tex-cache
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest            # 73 tests
+python -m pytest            # 97 tests
 
 # ブラウザ操作の E2E（任意 / Playwright が必要）
 python -m hph ./sample-docs --port 8899 --no-browser &
