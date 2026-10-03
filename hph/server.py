@@ -22,6 +22,7 @@ from .index import IndexService
 from .instance import HEALTH_PATH
 from .paths import PathAccessError, resolve_within_root
 from .rawfiles import file_error, serve_file
+from .rules import parse_rules
 from .scanner import FileEntry, detect_charset, kind_of
 from .store import UserStore
 from .tex import available_engines, has_dvipdfmx, has_latexmk
@@ -104,8 +105,8 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     async def update_config(payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
         updatable = {
             "include_extensions": list,
-            "ignore_dirs": list,
             "ignore_globs": list,
+            "exclude": list,
             "max_depth": int,
             "max_files": int,
             "follow_symlinks": bool,
@@ -141,16 +142,20 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
         except (ConfigError, OSError) as exc:
             return _error(str(exc), 400)
         await index.rescan(force=True)
-        return JSONResponse({"root": {"id": root.id, "name": root.name, "path": root.path}})
+        return JSONResponse({"root": root.to_dict()})
 
     @app.patch("/api/roots/{root_id}")
-    async def rename_root(root_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
-        root = config.update_root(root_id, name=str(payload.get("name", "")))
+    async def update_root(root_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
+        try:
+            exclude = parse_rules(payload["exclude"]) if "exclude" in payload else None
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        root = config.update_root(root_id, name=str(payload.get("name", "")), exclude=exclude)
         if root is None:
             return _error("ルートが見つかりません", 404)
         config.save()
         await index.rescan(force=True)
-        return JSONResponse({"root": {"id": root.id, "name": root.name, "path": root.path}})
+        return JSONResponse({"root": root.to_dict()})
 
     @app.delete("/api/roots/{root_id}")
     async def remove_root(root_id: str) -> JSONResponse:
