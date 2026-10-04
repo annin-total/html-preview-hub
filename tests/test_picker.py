@@ -81,6 +81,43 @@ def test_command_per_platform(monkeypatch: pytest.MonkeyPatch, platform: str, to
     monkeypatch.setattr(picker.subprocess, "run", lambda cmd, **_: seen.append(cmd) or _completed(0, b"/x"))
     picker.pick_folder()
     assert seen[0][0] == tool
+    assert ("System Events" in " ".join(seen[0])) is (platform == "darwin")
+
+
+def _sequence(monkeypatch: pytest.MonkeyPatch, results: list[SimpleNamespace]) -> list[list[str]]:
+    """呼ばれた順に結果を返し、実行したコマンドを記録する。"""
+    seen: list[list[str]] = []
+    queue = list(results)
+
+    def run(command: list[str], **_: object) -> SimpleNamespace:
+        seen.append(command)
+        return queue.pop(0)
+
+    monkeypatch.setattr(picker.subprocess, "run", run)
+    return seen
+
+
+def test_macos_opens_via_system_events(monkeypatch: pytest.MonkeyPatch, fake_run: None) -> None:
+    seen = _sequence(monkeypatch, [_completed(0, b"/Users/me/docs\n")])
+    assert picker.pick_folder().path == "/Users/me/docs"
+    assert len(seen) == 1
+    assert 'tell application "System Events"' in " ".join(seen[0])
+
+
+def test_macos_falls_back_when_system_events_is_refused(
+    monkeypatch: pytest.MonkeyPatch, fake_run: None
+) -> None:
+    refused = _completed(1, err=b"Not authorized to send Apple events to System Events. (-1743)")
+    seen = _sequence(monkeypatch, [refused, _completed(0, b"/Users/me/docs\n")])
+    assert picker.pick_folder().path == "/Users/me/docs"
+    assert len(seen) == 2
+    assert "System Events" not in " ".join(seen[1])
+
+
+def test_macos_cancel_does_not_fall_back(monkeypatch: pytest.MonkeyPatch, fake_run: None) -> None:
+    seen = _sequence(monkeypatch, [_completed(1, err=b"User canceled. (-128)")])
+    assert picker.pick_folder().status == "cancelled"
+    assert len(seen) == 1
 
 
 def test_windows_output_is_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
