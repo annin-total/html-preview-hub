@@ -55,7 +55,7 @@ JSON を返す API のエラーは `{"error": メッセージ}` を該当ステ�
   - `{"status": "selected", "path": "/abs/path"}` — フォルダが選ばれた
   - `{"status": "cancelled"}` — キャンセルされた、または待ち時間の上限（600 秒）を超えた
   - `{"status": "unavailable", "message": "..."}` — 開く手段が無い、または起動に失敗した。呼び出し側はアプリ内の一覧（`/api/browse`）に切り替えます
-  - 選択画面は macOS が `osascript`、Windows が PowerShell、Linux が `zenity`（無ければ `kdialog`）で開きます。Windows と Linux は実機で未確認です。
+  - 選択画面は macOS が System Events（`osascript` から依頼。開けなければ `osascript` 自身）、Windows が PowerShell、Linux が `zenity`（無ければ `kdialog`）で開きます。Windows と Linux は実機で未確認です。
   - 画面が利用者の PC に出るため、次の場合は `403` を返します。要求元がループバックアドレスでない、`Host` ヘッダが `localhost` / `127.0.0.1` / `::1` でない、`Origin` ヘッダがあって `Host` と一致しない。
   - 選択画面がすでに開いている間の要求は `409` です（同時に開けるのは 1 つ）。
   - 選ばれたフォルダはこの API では登録しません。続けて `POST /api/roots` を呼びます。

@@ -63,7 +63,7 @@ html-preview-hub/
 | `browser.py` | サーバーが `/api/health` に応答するまで別スレッドで待ち、既定のブラウザで画面を開く |
 | `rules.py` | 除外ルール（対象・条件・値）の検証と、名前がルールに当てはまるかの判定（大文字・小文字を区別しない） |
 | `scanner.py` | ルート配下の再帰スキャンと、HTML / LaTeX からのタイトル抽出（`(mtime, size)` キャッシュ付き） |
-| `picker.py` | OS ごとの手段（`osascript` / PowerShell / `zenity` / `kdialog`）でフォルダ選択画面を開き、結果を selected / cancelled / unavailable で返す |
+| `picker.py` | OS ごとの手段（macOS は System Events、開けなければ `osascript` 自身 / PowerShell / `zenity` / `kdialog`）でフォルダ選択画面を開き、結果を selected / cancelled / unavailable で返す |
 | `tex.py` | LaTeX エンジンの判定・コンパイル実行・PDF キャッシュの管理 |
 | `texjobs.py` | コンパイルをバックグラウンドジョブとして実行し、状態を保持する（ファイル単位で相乗り、異なるファイルは並列） |
 | `texfont.lua` | luaotfload の名前解決にフックし、見つからないフォントを TeX Live 同梱のフォントへ読み替える。フォント未検出で失敗したときの再試行でのみ読み込む |
@@ -98,6 +98,7 @@ html-preview-hub/
 - **二重起動の防止**: 判定はポート単位です。同じホスト・ポートへの起動だけを防ぎ、`--port` を変えた複数起動は許します。判定から待ち受け開始までの間に別の起動が割り込んだ場合は、後発がポートを確保できずにエラー終了します。
 - **停止の待機**: uvicorn は停止時に処理中のリクエストの完了を待ちます。待機の上限は `SHUTDOWN_TIMEOUT_SECONDS`（5 秒）で、超えたリクエストは取り消されます（ログにトレースバックが出ます）。ブラウザが開いている間は `/api/index/watch` のロングポーリングが常に残るため、その保留時間 `WATCH_TIMEOUT_SECONDS`（4 秒）を上限より短くし、待機中に自然に返るようにしています。どちらも `server.py` にあり、この大小関係はテストで固定しています。上限に達しても lifespan の後始末は行われます。`Ctrl+C` をもう一度押すと uvicorn は待機を打ち切り、lifespan の後始末（LaTeX ジョブの停止・バックグラウンドスキャンの停止）を行わずに終了します。
 - **ランチャー**: macOS は `.command` を Terminal で実行し、サーバーの終了後に AppleScript で自分のウインドウを閉じます。シェルの終了を待ってから閉じるのは、実行中に閉じると確認ダイアログが出るためです。Windows のショートカットは venv の `python.exe` を直接起動します。バッチファイルを挟むと、`Ctrl+C` の後に `cmd.exe` が「バッチ ジョブを終了しますか (Y/N)?」と尋ね、ウインドウが自動で閉じなくなるためです。コンソールは `python.exe` の終了とともに閉じます。
+- **macOS のフォルダ選択画面**: `osascript` から System Events に開かせ、閉じたら元のアプリへ前面を戻します。`osascript` 自身が開く画面は日本語化されず英語で表示され、前面に出すための `activate` にも数秒かかります。Finder に開かせると日本語になりますが、開いている Finder のウインドウもすべて前面に出てきます。System Events は日本語化されていて自分のウインドウを持たないため、この 2 つを避けられます。「オートメーション」の許可が無いなどで開けなければ、`osascript` 自身の画面で開き直します。
 
 ## 5. セキュリティ設計
 
