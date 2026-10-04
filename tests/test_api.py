@@ -147,6 +147,12 @@ def test_spa_shell_and_static_assets(client: TestClient) -> None:
     assert client.get("/static/css/app.css").status_code == 200
 
 
+def test_spa_shell_and_static_assets_are_revalidated(client: TestClient) -> None:
+    """更新後に古い画面が残らないよう、ブラウザに毎回確かめさせる。"""
+    for path in ("/", "/static/js/app.js"):
+        assert "no-cache" in client.get(path).headers["cache-control"]
+
+
 def test_unknown_path_without_referer_is_404(client: TestClient) -> None:
     assert client.get("/totally/unknown").status_code == 404
 

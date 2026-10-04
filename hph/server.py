@@ -32,6 +32,19 @@ from .tex import cached_pdf as cached_tex_pdf
 from .texjobs import TexJob, TexJobRegistry
 
 STATIC_DIR = Path(__file__).parent / "static"
+REVALIDATE = {"Cache-Control": "no-cache"}
+
+
+class RevalidatedStaticFiles(StaticFiles):
+    """配信のたびにブラウザへ再検証させ、更新後に古いフロントエンドが残らないようにする。"""
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        """`Cache-Control: no-cache` を付けたファイル応答を返す。"""
+        response = super().file_response(*args, **kwargs)
+        response.headers.update(REVALIDATE)
+        return response
+
+
 RAW_PREFIX = "/raw"
 # 停止時、uvicorn は処理中のリクエストを最大 SHUTDOWN_TIMEOUT_SECONDS 待ってから取り消す
 # （取り消すとトレースバックが出る）。ロングポーリングはそれより短く保留し、待機中に自然に返るようにする。
@@ -327,11 +340,13 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     # ------------------------------------------------------------------
     # 静的アセットと SPA シェル
     # ------------------------------------------------------------------
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", RevalidatedStaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     async def index_page() -> Response:
-        return FileResponse(STATIC_DIR / "index.html", media_type="text/html; charset=utf-8")
+        return FileResponse(
+            STATIC_DIR / "index.html", media_type="text/html; charset=utf-8", headers=REVALIDATE
+        )
 
     @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def fallback(full_path: str, request: Request) -> Response:

@@ -89,6 +89,7 @@ html-preview-hub/
 
 - **スキャン**: `os.scandir` で反復します。タイトルは先頭 64KB のみ読み、`(mtime, size)` をキーにキャッシュするため、再スキャン時に読み直すのは変更されたファイルだけです（5,100 ファイルで初回 134ms / 再スキャン 166ms）。
 - **描画**: ホームは 48 件ずつ追記描画（`IntersectionObserver`）、サイドバーは固定行高の仮想スクロール。5,100 ファイルでも DOM 上の行は 40 行程度に保たれます。
+- **静的ファイルの再検証**: `/static` と `/` は `Cache-Control: no-cache` で配信します。更新後に古いフロントエンドが新しいサーバーと組み合わさって壊れるのを防ぐためで、ブラウザは毎回 ETag / Last-Modified で確かめるだけなのでローカルでは負担になりません。
 - **プレビューの分離**: `sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-popups-to-escape-sandbox"`。`allow-same-origin` を付けないので unique origin となり、アプリ本体の DOM・localStorage には触れません。`localStorage` を使うページ向けにツールバーの「分離 / 互換」で切り替えられます（互換モードは分離レベルが下がります）。
 - **LaTeX**: マジックコメント（`% !TEX program = ...`）→ プリアンブル（`luatexja` / `xeCJK` / `jsarticle` など）→ 既定順、の優先度でエンジンを選びます。コンパイルは常に `-no-shell-escape` で実行し、`\write18` は使えません。生成物は「ソース内容 + エンジン」のハッシュをキーにキャッシュするため、内容が変わらない限り再コンパイルしません（日本語 lualatex 文書で初回 12 秒 → 2 回目 101ms → キャッシュ 0.4ms）。`\documentclass` の無い断片ファイルはコンパイルせず、その旨とソース表示を案内します。
 - **PDF の表示**: PDF はサンドボックス iframe ではブラウザ内蔵ビューアが無効化されるため、PDF のみ `sandbox` を付けずに表示しています。PDF ビューアは親ページの DOM やストレージへアクセスできないため、分離は保たれます。
