@@ -1,11 +1,11 @@
 /**
- * 設定モーダル: 対象フォルダ、共通の除外条件、対象ファイルの種類、詳細設定。
+ * 設定モーダル: 対象フォルダ、共通の除外条件、対象ファイルの種類、詳細設定、ショートカット一覧。
  */
 
 import { el, errorReason } from "../util.js";
 import { createExcludeEditor } from "./exclude-editor.js";
 import { createRootList } from "./root-list.js";
-import { advancedSettings } from "./settings-advanced.js";
+import { advancedSettings, shortcutSection } from "./settings-advanced.js";
 
 const HTML_EXTS = [".html", ".htm", ".xhtml"];
 const TEX_EXT = ".tex";
@@ -198,6 +198,7 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
       excludeSection(),
       typesNode,
       advancedSettings({ config, texStatus, save, state: advancedState }),
+      shortcutSection(),
     );
   }
 

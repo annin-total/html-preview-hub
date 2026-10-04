@@ -238,6 +238,10 @@ const assert = require("assert");
   await page.fill("#homeSearch", "");
   await folderCard("scratch").waitFor();
   await page.click("#settingsBtn");
+  // ショートカット一覧は変更できない参照情報なので、開いた直後から見える
+  await page
+    .locator('section[aria-labelledby="secShortcuts"] .shortcut-list')
+    .waitFor({ state: "visible", timeout: 3000 });
   const excludeSection = page.locator('section[aria-labelledby="secExclude"]');
   await excludeSection.locator('input[aria-label="名前"]').fill("scratch");
   await excludeSection.locator(".rule-form .pill").click();
