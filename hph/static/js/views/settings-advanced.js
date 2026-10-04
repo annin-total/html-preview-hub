@@ -1,4 +1,4 @@
-/** 設定の「詳細設定」: スキャン設定・LaTeX・ショートカット一覧（保存ボタンで保存する）。 */
+/** 設定の「詳細設定」（スキャン設定・LaTeX。保存ボタンで保存する）と、ショートカット一覧。 */
 
 import { el } from "../util.js";
 
@@ -131,20 +131,12 @@ export function advancedSettings({ config, texStatus, save, state }) {
     "details",
     { class: "disclosure settings-section", open: state.open },
     [
-      el("summary", { text: "詳細設定（スキャン・LaTeX・ショートカット）" }),
+      el("summary", { text: "詳細設定（スキャン・LaTeX）" }),
       el("div", { class: "disclosure__body" }, [
         el("h3", { class: "section-title", text: "スキャン設定" }),
         ...scanSettings(config, save),
         el("h3", { class: "section-title", text: "LaTeX" }),
         ...texSettings(config, texStatus, save),
-        el("h3", { class: "section-title", text: "ショートカット" }),
-        el(
-          "div",
-          { class: "shortcut-list" },
-          SHORTCUTS.map(([keys, desc]) =>
-            el("div", {}, [el("kbd", { text: keys }), " ", desc]),
-          ),
-        ),
       ]),
     ],
   );
@@ -152,4 +144,28 @@ export function advancedSettings({ config, texStatus, save, state }) {
     state.open = details.open;
   });
   return details;
+}
+
+/** ショートカット一覧。変更できない参照情報なので折りたたまずに見せる。 */
+export function shortcutSection() {
+  return el(
+    "section",
+    { class: "settings-section", "aria-labelledby": "secShortcuts" },
+    [
+      el("div", { class: "section-head" }, [
+        el("h3", {
+          class: "section-title",
+          id: "secShortcuts",
+          text: "ショートカット",
+        }),
+      ]),
+      el(
+        "div",
+        { class: "shortcut-list" },
+        SHORTCUTS.map(([keys, desc]) =>
+          el("div", {}, [el("kbd", { text: keys }), " ", desc]),
+        ),
+      ),
+    ],
+  );
 }
