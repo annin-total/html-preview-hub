@@ -117,3 +117,8 @@ export function isTypingTarget(target) {
     target.isContentEditable
   );
 }
+
+/** 通知に出す失敗の理由。サーバーの応答が無いときは接続できない旨にする。 */
+export function errorReason(error) {
+  return error.status ? error.message : "サーバーに接続できません";
+}

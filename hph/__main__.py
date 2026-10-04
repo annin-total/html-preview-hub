@@ -38,7 +38,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=None, help="ポート番号")
     parser.add_argument("--no-browser", action="store_true", help="起動時にブラウザを開かない")
     parser.add_argument("--save", action="store_true", help="指定したフォルダを設定ファイルへ保存する")
-    parser.add_argument("--reload", action="store_true", help="開発用オートリロード")
     parser.add_argument("--log-level", default="info", help="uvicorn のログレベル")
     parser.add_argument(
         "--pause-on-exit",

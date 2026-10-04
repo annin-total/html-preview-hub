@@ -1,235 +1,182 @@
 /**
- * 設定モーダル: 対象ルートフォルダの追加・削除、スキャン条件、ショートカット一覧。
+ * 設定モーダル: 対象フォルダ、共通の除外条件、対象ファイルの種類、詳細設定、ショートカット一覧。
  */
 
-import { el } from "../util.js";
+import { el, errorReason } from "../util.js";
+import { createExcludeEditor } from "./exclude-editor.js";
+import { createRootList } from "./root-list.js";
+import { advancedSettings, shortcutSection } from "./settings-advanced.js";
 
-const SHORTCUTS = [
-  ["/ または Ctrl/⌘ + K", "検索にフォーカス"],
-  ["↑ / ↓", "ファイルを移動"],
-  ["Enter", "開く"],
-  ["Esc", "一覧へ戻る / 検索解除"],
-  ["r", "プレビューを再読み込み"],
-  ["u", "ソース表示の切り替え"],
-  ["l", "コンパイルログの切り替え"],
-  ["f", "お気に入り切り替え"],
-  ["t", "表示名の切り替え（タイトル / ファイル名）"],
-  ["[", "サイドバーの表示切り替え"],
-  [", (カンマ)", "設定を開く"],
-  ["カード右クリック", "フォルダの非表示切り替え"],
-];
-const LABEL_STYLE = "flex:0 0 210px;font-size:12px;color:var(--text-dim)";
-
-const parseList = (value) =>
-  value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+const HTML_EXTS = [".html", ".htm", ".xhtml"];
+const TEX_EXT = ".tex";
 
 export function createSettingsView({ dom, api, onChanged, onNotify }) {
   let config = null;
-  let browserState = null;
   let lastRoots = [];
   let texStatus = null;
+  let typesNode = null;
+  const editorStates = new Map();
+  const advancedState = { open: false };
+
+  const editorState = (key) => {
+    if (!editorStates.has(key)) editorStates.set(key, {});
+    return editorStates.get(key);
+  };
+
+  /** 即時保存の共通処理。失敗は通知してから投げ直し、呼び出し側に表示を戻させる。 */
+  async function persist(request) {
+    try {
+      await request();
+    } catch (error) {
+      onNotify(`保存できなかったため元に戻しました: ${errorReason(error)}`);
+      throw error;
+    }
+    await onChanged();
+  }
+
+  const rootList = createRootList({
+    api,
+    onNotify,
+    onChanged,
+    reload: () => refresh(),
+    persist,
+    editorState,
+  });
 
   async function refresh() {
-    const payload = await api.config();
-    config = payload.config;
-    dom.configPathHint.textContent = payload.configPath;
+    try {
+      const payload = await api.config();
+      config = payload.config;
+      dom.configPathHint.textContent = payload.configPath;
+    } catch (error) {
+      onNotify(`設定を読み込めません: ${error.message}`);
+      return;
+    }
     texStatus = await api.texStatus().catch(() => null);
     render();
   }
 
-  function rootRows(indexRoots) {
-    return indexRoots.map((root) =>
-      el("div", { class: `root-row${root.exists ? "" : " is-missing"}` }, [
-        el("div", { class: "root-row__body" }, [
-          el("div", {
-            class: "root-row__name",
-            text: root.name + (root.exists ? "" : "（見つかりません）"),
+  function excludeSection() {
+    return el(
+      "section",
+      { class: "settings-section", "aria-labelledby": "secExclude" },
+      [
+        el("div", { class: "section-head" }, [
+          el("h3", {
+            class: "section-title",
+            id: "secExclude",
+            text: "共通の除外条件",
           }),
-          el("div", { class: "root-row__path", text: root.path }),
         ]),
-        el("span", { class: "root-row__count", text: `${root.fileCount} 件` }),
-        el("button", {
-          class: "chip chip--sm",
-          type: "button",
-          text: "削除",
-          onclick: async () => {
-            await api.removeRoot(root.id);
-            onNotify(`${root.name} を削除しました`);
-            await onChanged();
-            refresh();
-          },
+        el("p", {
+          class: "section-note",
+          text: "すべての対象フォルダに適用します。名前の大文字と小文字は区別しません。",
         }),
-      ]),
+        createExcludeEditor({
+          rules: config.exclude,
+          label: "共通の除外条件を追加",
+          emptyText:
+            "除外条件はありません。一覧に出したくないフォルダやファイルがあれば、下の行で名前を指定してください。",
+          state: editorState("global"),
+          onChange: (exclude) =>
+            persist(async () => {
+              await api.updateConfig({ exclude });
+              config.exclude = exclude;
+            }),
+        }),
+      ],
     );
   }
 
-  function addForm() {
-    const input = el("input", {
-      type: "text",
-      placeholder: "/path/to/html （フルパスを入力、または「参照」から選択）",
-      spellcheck: "false",
-    });
-    const submit = async () => {
-      const value = input.value.trim();
-      if (!value) return;
-      try {
-        const result = await api.addRoot(value);
-        onNotify(`${result.root.name} を追加しました`);
-        input.value = "";
-        browserState = null;
-        await onChanged();
-        refresh();
-      } catch (error) {
-        onNotify(`追加できません: ${error.message}`);
-      }
-    };
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") submit();
-    });
-    return el("div", {}, [
-      el("div", { class: "field" }, [
-        input,
-        el("button", {
-          class: "chip",
-          type: "button",
-          text: "参照",
-          onclick: async () => {
-            browserState = await api
-              .browse(input.value.trim() || undefined)
-              .catch(() => null);
-            render();
-          },
+  function typesSection() {
+    const exts = config.include_extensions;
+    const html = HTML_EXTS.every((ext) => exts.includes(ext));
+    const tex = exts.includes(TEX_EXT);
+    // HTML の拡張子が一部だけのときは、隠さず「その他」に出す
+    const others = exts.filter(
+      (ext) => ext !== TEX_EXT && !(html && HTML_EXTS.includes(ext)),
+    );
+    // 「その他」があればすべてオフにはならないので、HTML・LaTeX の両方を外せる
+    const lastOne = !others.length && Number(html) + Number(tex) === 1;
+    const check = (label, meta, on, next) =>
+      el("label", { class: "check" }, [
+        el("input", {
+          type: "checkbox",
+          checked: on,
+          disabled: on && lastOne,
+          "aria-describedby": on && lastOne ? "typesHint" : null,
+          onchange: (event) => saveTypes(next, event.target),
         }),
-        el("button", {
-          class: "pill pill--solid",
-          type: "button",
-          text: "追加",
-          onclick: submit,
-        }),
-      ]),
-      browserState ? browserPanel(input) : null,
-    ]);
-  }
-
-  function browserPanel(input) {
-    const go = async (path) => {
-      try {
-        browserState = await api.browse(path);
-        input.value = browserState.path;
-        render();
-      } catch (error) {
-        onNotify(error.message);
-      }
-    };
-    return el("div", { class: "browser" }, [
-      el("div", { class: "browser__path", text: browserState.path }),
-      el("div", { class: "browser__list" }, [
-        browserState.parent
-          ? el("button", {
-              class: "browser__item",
-              type: "button",
-              text: ".. （上へ）",
-              onclick: () => go(browserState.parent),
-            })
-          : null,
-        ...browserState.entries.map((entry) =>
-          el("button", {
-            class: "browser__item",
-            type: "button",
-            text: `📁 ${entry.name}`,
-            onclick: () => go(entry.path),
+        label,
+        el("span", { class: "check__meta", text: meta }),
+      ]);
+    const without = (removed) => exts.filter((ext) => !removed.includes(ext));
+    const hintStyle = "margin:var(--sp-2) 0 0";
+    return el(
+      "section",
+      { class: "settings-section", "aria-labelledby": "secTypes" },
+      [
+        el("div", { class: "section-head" }, [
+          el("h3", {
+            class: "section-title",
+            id: "secTypes",
+            text: "対象ファイルの種類",
           }),
+        ]),
+        el(
+          "div",
+          { class: "chips", role: "group", "aria-labelledby": "secTypes" },
+          [
+            check(
+              "HTML",
+              HTML_EXTS.join(" "),
+              html,
+              html ? without(HTML_EXTS) : [...without(HTML_EXTS), ...HTML_EXTS],
+            ),
+            check(
+              "LaTeX",
+              TEX_EXT,
+              tex,
+              tex ? without([TEX_EXT]) : [...exts, TEX_EXT],
+            ),
+          ],
         ),
-        browserState.entries.length === 0
-          ? el("div", {
-              class: "browser__item",
-              text: "サブフォルダはありません",
+        others.length
+          ? el("p", {
+              class: "section-note",
+              style: hintStyle,
+              text: `その他: ${others.join(" ")}（設定ファイルで指定されています）`,
             })
           : null,
-      ]),
-    ]);
+        lastOne
+          ? el("p", {
+              class: "section-note",
+              id: "typesHint",
+              style: hintStyle,
+              text: "少なくとも 1 つは選んでください。",
+            })
+          : null,
+      ],
+    );
   }
 
-  /** LaTeX 設定と、検出されたエンジンの表示。 */
-  function texSettings() {
-    const fields = [
-      [
-        "tex_engine",
-        "エンジン（auto で自動判定）",
-        String,
-        (v) => v.trim() || "auto",
-      ],
-      [
-        "tex_timeout_seconds",
-        "コンパイルのタイムアウト（秒）",
-        String,
-        (v) => Number(v),
-      ],
-      [
-        "tex_max_passes",
-        "コンパイル回数（latexmk 未使用時）",
-        String,
-        (v) => Number(v),
-      ],
-    ];
-    const { rows, button } = fieldForm(fields, "LaTeX 設定を保存");
-    const detected = texStatus
-      ? texStatus.engines.length
-        ? `検出: ${texStatus.engines.join(", ")}${texStatus.latexmk ? " / latexmk" : ""}`
-        : "検出されたエンジンはありません（pdflatex / xelatex / lualatex / tectonic のいずれかを導入してください）"
-      : "";
-    return el("div", {}, [
-      fieldRow(
-        "PDF プレビュー",
-        el("button", {
-          class: "chip",
-          type: "button",
-          "aria-pressed": String(Boolean(config.tex_enabled)),
-          text: config.tex_enabled ? "有効" : "無効",
-          onclick: () => save({ tex_enabled: !config.tex_enabled }),
-        }),
-      ),
-      ...rows,
-      el("div", {
-        style: "font-size:11px;color:var(--text-faint);margin:4px 0 10px",
-        text: detected,
-      }),
-      button,
-    ]);
-  }
-
-  function fieldRow(label, control) {
-    return el("div", { class: "field", style: "margin-bottom:8px" }, [
-      el("span", { style: LABEL_STYLE, text: label }),
-      control,
-    ]);
-  }
-
-  /** 入力欄の行と、全欄をまとめて保存するボタンを作る。 */
-  function fieldForm(fields, buttonText) {
-    const inputs = new Map();
-    const rows = fields.map(([key, label, format]) => {
-      const input = el("input", { type: "text", value: format(config[key]) });
-      inputs.set(key, input);
-      return fieldRow(label, input);
-    });
-    const button = el("div", { class: "field" }, [
-      el("button", {
-        class: "pill",
-        type: "button",
-        text: buttonText,
-        onclick: () => {
-          const patch = {};
-          for (const [key, , , parse] of fields)
-            patch[key] = parse(inputs.get(key).value);
-          save(patch);
-        },
-      }),
-    ]);
-    return { rows, button };
+  /** 保存中は全チェックを止める（続けて押すと古い一覧から計算した保存で上書きするため）。 */
+  async function saveTypes(next, input) {
+    const boxes = [...typesNode.querySelectorAll("input")];
+    const index = boxes.indexOf(input);
+    for (const box of boxes) box.disabled = true;
+    try {
+      await persist(async () => {
+        await api.updateConfig({ include_extensions: next });
+        config.include_extensions = next;
+      });
+    } catch {
+      // persist が通知済み。config は保存前のままなので、下の描き直しでチェックも戻る
+    }
+    const fresh = typesSection();
+    typesNode.replaceWith(fresh);
+    typesNode = fresh;
+    typesNode.querySelectorAll("input")[index].focus();
   }
 
   async function save(patch) {
@@ -243,56 +190,15 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
     }
   }
 
-  function scanSettings() {
-    const fields = [
-      [
-        "include_extensions",
-        "対象拡張子（カンマ区切り）",
-        (v) => v.join(", "),
-        parseList,
-      ],
-      [
-        "ignore_dirs",
-        "除外フォルダ名（カンマ区切り）",
-        (v) => v.join(", "),
-        parseList,
-      ],
-      ["max_depth", "最大階層", String, (v) => Number(v)],
-      [
-        "watch_interval_seconds",
-        "自動再スキャン間隔（秒 / 0 で無効）",
-        String,
-        (v) => Number(v),
-      ],
-    ];
-    const { rows, button } = fieldForm(fields, "スキャン設定を保存");
-    return el("div", {}, [...rows, button]);
-  }
-
-  function render(indexRoots = []) {
+  function render() {
     if (!config) return;
-    const roots = indexRoots.length ? indexRoots : lastRoots;
+    typesNode = typesSection();
     dom.body.replaceChildren(
-      el(
-        "div",
-        { class: "root-list" },
-        roots.length
-          ? rootRows(roots)
-          : [el("div", { class: "root-row", text: "まだ登録されていません" })],
-      ),
-      addForm(),
-      el("div", { class: "section-title", text: "スキャン設定" }),
-      scanSettings(),
-      el("div", { class: "section-title", text: "LaTeX" }),
-      texSettings(),
-      el("div", { class: "section-title", text: "ショートカット" }),
-      el(
-        "div",
-        { class: "shortcut-list" },
-        SHORTCUTS.map(([keys, desc]) =>
-          el("div", {}, [el("kbd", { text: keys }), " ", desc]),
-        ),
-      ),
+      rootList.render(lastRoots),
+      excludeSection(),
+      typesNode,
+      advancedSettings({ config, texStatus, save, state: advancedState }),
+      shortcutSection(),
     );
   }
 
@@ -301,14 +207,14 @@ export function createSettingsView({ dom, api, onChanged, onNotify }) {
       lastRoots = indexRoots;
       dom.modal.hidden = false;
       await refresh();
-      render(indexRoots);
     },
     close() {
       dom.modal.hidden = true;
-      browserState = null;
+      rootList.reset();
     },
     setRoots(indexRoots) {
       lastRoots = indexRoots;
+      rootList.setRoots(indexRoots);
     },
     get isOpen() {
       return !dom.modal.hidden;
