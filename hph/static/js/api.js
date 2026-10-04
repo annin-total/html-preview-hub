@@ -15,9 +15,11 @@ async function request(url, options = {}) {
     }
   }
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       (payload && payload.error) || `${response.status} ${response.statusText}`,
     );
+    error.status = response.status;
+    throw error;
   }
   return payload;
 }
@@ -35,6 +37,13 @@ export const api = {
   updateConfig: (patch) =>
     request("/api/config", { method: "PUT", body: JSON.stringify(patch) }),
   addRoot: (path, name) => post("/api/roots", { path, name }),
+  updateRoot: (rootId, patch) =>
+    request(`/api/roots/${encodeURIComponent(rootId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  /** OS のフォルダ選択画面を開き、選ばれるまで待つ。 */
+  pickFolder: () => post("/api/pick-folder"),
   removeRoot: (rootId) =>
     request(`/api/roots/${encodeURIComponent(rootId)}`, { method: "DELETE" }),
   browse: (path) =>

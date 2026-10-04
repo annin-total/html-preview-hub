@@ -1,8 +1,6 @@
 /** DOM とフォーマットの小さなユーティリティ群。 */
 
 export const $ = (selector, scope = document) => scope.querySelector(selector);
-export const $$ = (selector, scope = document) =>
-  Array.from(scope.querySelectorAll(selector));
 
 /** 属性・子要素をまとめて指定できる createElement。 */
 export function el(tag, props = {}, children = []) {
@@ -118,4 +116,9 @@ export function isTypingTarget(target) {
     tag === "SELECT" ||
     target.isContentEditable
   );
+}
+
+/** 通知に出す失敗の理由。サーバーの応答が無いときは接続できない旨にする。 */
+export function errorReason(error) {
+  return error.status ? error.message : "サーバーに接続できません";
 }

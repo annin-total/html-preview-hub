@@ -27,14 +27,18 @@ html-preview-hub/
 │   ├── __main__.py           # CLI エントリポイント（python -m hph）
 │   ├── config.py             # 設定の読み書き・ルート管理
 │   ├── instance.py           # 起動済みインスタンスの検出（二重起動の防止）
+│   ├── browser.py            # 起動時にブラウザで画面を開く（サーバーの応答を待つ）
+│   ├── rules.py              # 除外ルールの検証と判定
 │   ├── scanner.py            # 再帰スキャンとタイトル抽出（HTML / LaTeX）
+│   ├── picker.py             # OS のフォルダ選択画面を開く
 │   ├── tex.py                # LaTeX のエンジン判定・コンパイル・キャッシュ
 │   ├── texjobs.py            # LaTeX コンパイルのバックグラウンド実行と状態管理
 │   ├── texfont.lua           # フォント未検出時に読み込ませる代替フォント定義（LuaTeX）
 │   ├── index.py              # インデックス保持・再スキャン・変更通知
 │   ├── store.py              # お気に入り / 非表示 / 履歴の永続化
 │   ├── paths.py              # パス正規化とトラバーサル対策
-│   ├── server.py             # FastAPI ルーティングとファイル配信
+│   ├── server.py             # FastAPI ルーティング
+│   ├── rawfiles.py           # /raw のファイル配信（MIME 判定・エラーページ）
 │   └── static/               # フロントエンド（ビルド不要）
 │       ├── index.html        # SPA シェル
 │       ├── css/app.css       # デザイントークンとコンポーネント
@@ -44,7 +48,7 @@ html-preview-hub/
 │           ├── state.js      # 状態管理と検索インデックス
 │           ├── util.js       # DOM / 整形ユーティリティ
 │           ├── virtual-list.js  # 固定行高の仮想スクロール
-│           └── views/        # home / tree / preview / settings
+│           └── views/        # home / tree / preview / settings（設定は root-list・root-add・root-parts・exclude-editor・settings-advanced に分割）
 ├── sample-docs/              # 動作確認用のサンプル（HTML と LaTeX）
 ├── docs/                      # ドキュメント（本書・API 仕様・設定・使い方・スクリーンショット）
 └── tests/                     # pytest（+ 任意の Playwright E2E）
@@ -56,28 +60,36 @@ html-preview-hub/
 | --- | --- |
 | `config.py` | 設定ファイルの探索・読み書き・ルートフォルダの追加/削除、既定値の一元管理 |
 | `instance.py` | 指定ホスト・ポートが空いているか、html-preview-hub が起動済みか、別のアプリが使用中かを `/api/health` への問い合わせで判定する |
+| `browser.py` | サーバーが `/api/health` に応答するまで別スレッドで待ち、既定のブラウザで画面を開く |
+| `rules.py` | 除外ルール（対象・条件・値）の検証と、名前がルールに当てはまるかの判定（大文字・小文字を区別しない） |
 | `scanner.py` | ルート配下の再帰スキャンと、HTML / LaTeX からのタイトル抽出（`(mtime, size)` キャッシュ付き） |
+| `picker.py` | OS ごとの手段（macOS は System Events、開けなければ `osascript` 自身 / PowerShell / `zenity` / `kdialog`）でフォルダ選択画面を開き、結果を selected / cancelled / unavailable で返す |
 | `tex.py` | LaTeX エンジンの判定・コンパイル実行・PDF キャッシュの管理 |
 | `texjobs.py` | コンパイルをバックグラウンドジョブとして実行し、状態を保持する（ファイル単位で相乗り、異なるファイルは並列） |
 | `texfont.lua` | luaotfload の名前解決にフックし、見つからないフォントを TeX Live 同梱のフォントへ読み替える。フォント未検出で失敗したときの再試行でのみ読み込む |
 | `index.py` | スキャン結果のスナップショット保持、バックグラウンド再スキャン、変更のロングポーリング通知 |
 | `store.py` | お気に入り / 非表示フォルダ / 最近開いたファイルの永続化（スレッドセーフな KVS） |
 | `paths.py` | URL 由来の相対パスの正規化とディレクトリトラバーサル対策 |
-| `server.py` | FastAPI のルーティング定義、`/raw` によるファイル配信、静的アセットの提供 |
+| `server.py` | FastAPI のルーティング定義、静的アセットの提供 |
+| `rawfiles.py` | `/raw` によるファイル配信（ディレクトリの index 解決・MIME 判定・iframe 用のエラーページ） |
 | `static/js/*` | SPA のルーティング・状態管理・検索・各画面（home / tree / preview / settings）の描画 |
+| `static/js/views/exclude-editor.js` | 除外条件の部品（札の並びと追加行）。共通とフォルダごとで使い回す |
+| `static/js/views/root-list.js` `root-parts.js` `root-add.js` | 対象フォルダの一覧・削除の確認・アプリ内の一覧・フォルダの追加（選択画面の呼び出し） |
+| `static/js/views/settings-advanced.js` | 設定の「詳細設定」（スキャン・LaTeX・ショートカット） |
 
 ## 3. 処理フロー
 
 1. **起動**: `python -m hph` が `Config.load()` で設定ファイルを読み込み、CLI 引数を上書きします。続いて `instance.probe()` でポートを調べ、html-preview-hub が起動済みならブラウザでその画面を開いて終了し、別のアプリが使用中ならエラー終了します。空いていれば `create_app()` に渡して uvicorn でサーバーを起動します。ブラウザは、別スレッドで `/api/health` が応答するまで待ってから開きます（初回スキャンが終わるまでサーバーは待ち受けを始めないため）。
 2. **初回スキャン**: FastAPI の `lifespan` から `IndexService.start()` が呼ばれ、`scanner.scan()` を別スレッド（`asyncio.to_thread`）で実行してスナップショットを作ります。
 3. **インデックス保持と変更検知**: スナップショットは `IndexService` がメモリ上に保持し、内容が変わるとリビジョン番号を進めます。`watch_interval_seconds` が正の値なら、バックグラウンドタスクが一定間隔で再スキャンを実行します。フロントエンドは `GET /api/index/watch?revision=N` へロングポーリングし、リビジョンが進む（またはタイムアウトする）まで応答を待つことで手動リロード無しの自動追従を実現しています。
-4. **プレビュー要求**: フロントエンドが `GET /raw/{rootId}/{path}` を叩くと、`paths.resolve_within_root()` でルート配下の実パスに解決したうえで `server.py` がファイルを配信します。相対パス参照はそのまま解決され、ルート絶対パス（例 `/assets/app.css`）は `Referer` ヘッダーから元のルートを推測して救済します。
+4. **プレビュー要求**: フロントエンドが `GET /raw/{rootId}/{path}` を叩くと、`paths.resolve_within_root()` でルート配下の実パスに解決したうえで `rawfiles.py` がファイルを配信します。相対パス参照はそのまま解決され、ルート絶対パス（例 `/assets/app.css`）は `Referer` ヘッダーから元のルートを推測して救済します。
 5. **LaTeX プレビュー**: `.tex` を開くと `POST /api/tex/compile` が呼ばれ、`texjobs.TexJobRegistry` がバックグラウンドジョブを起動します。呼び出しは完了を待たずに返り、フロントエンドは `GET /api/tex/job` で状態をポーリングします。コンパイル本体は `tex.compile_tex()` が別スレッドで実行し、エンジンを判定したうえで生成物をソース内容とエンジン名のハッシュ（fingerprint）でキャッシュします。完了したらフロントエンドは `pdfUrl`（`GET /api/tex/pdf`）を iframe に読み込みます。ジョブはファイル単位で、同じファイルへの要求が重なると 1 本に相乗りします。異なるファイルどうしはセマフォの範囲で並列に走り、待っている間も他のファイルの表示・操作は妨げられません。
 
 ## 4. 主要な設計判断
 
 - **スキャン**: `os.scandir` で反復します。タイトルは先頭 64KB のみ読み、`(mtime, size)` をキーにキャッシュするため、再スキャン時に読み直すのは変更されたファイルだけです（5,100 ファイルで初回 134ms / 再スキャン 166ms）。
 - **描画**: ホームは 48 件ずつ追記描画（`IntersectionObserver`）、サイドバーは固定行高の仮想スクロール。5,100 ファイルでも DOM 上の行は 40 行程度に保たれます。
+- **静的ファイルの再検証**: `/static` と `/` は `Cache-Control: no-cache` で配信します。更新後に古いフロントエンドが新しいサーバーと組み合わさって壊れるのを防ぐためで、ブラウザは毎回 ETag / Last-Modified で確かめるだけなのでローカルでは負担になりません。
 - **プレビューの分離**: `sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-popups-to-escape-sandbox"`。`allow-same-origin` を付けないので unique origin となり、アプリ本体の DOM・localStorage には触れません。`localStorage` を使うページ向けにツールバーの「分離 / 互換」で切り替えられます（互換モードは分離レベルが下がります）。
 - **LaTeX**: マジックコメント（`% !TEX program = ...`）→ プリアンブル（`luatexja` / `xeCJK` / `jsarticle` など）→ 既定順、の優先度でエンジンを選びます。コンパイルは常に `-no-shell-escape` で実行し、`\write18` は使えません。生成物は「ソース内容 + エンジン」のハッシュをキーにキャッシュするため、内容が変わらない限り再コンパイルしません（日本語 lualatex 文書で初回 12 秒 → 2 回目 101ms → キャッシュ 0.4ms）。`\documentclass` の無い断片ファイルはコンパイルせず、その旨とソース表示を案内します。
 - **PDF の表示**: PDF はサンドボックス iframe ではブラウザ内蔵ビューアが無効化されるため、PDF のみ `sandbox` を付けずに表示しています。PDF ビューアは親ページの DOM やストレージへアクセスできないため、分離は保たれます。
@@ -86,12 +98,14 @@ html-preview-hub/
 - **二重起動の防止**: 判定はポート単位です。同じホスト・ポートへの起動だけを防ぎ、`--port` を変えた複数起動は許します。判定から待ち受け開始までの間に別の起動が割り込んだ場合は、後発がポートを確保できずにエラー終了します。
 - **停止の待機**: uvicorn は停止時に処理中のリクエストの完了を待ちます。待機の上限は `SHUTDOWN_TIMEOUT_SECONDS`（5 秒）で、超えたリクエストは取り消されます（ログにトレースバックが出ます）。ブラウザが開いている間は `/api/index/watch` のロングポーリングが常に残るため、その保留時間 `WATCH_TIMEOUT_SECONDS`（4 秒）を上限より短くし、待機中に自然に返るようにしています。どちらも `server.py` にあり、この大小関係はテストで固定しています。上限に達しても lifespan の後始末は行われます。`Ctrl+C` をもう一度押すと uvicorn は待機を打ち切り、lifespan の後始末（LaTeX ジョブの停止・バックグラウンドスキャンの停止）を行わずに終了します。
 - **ランチャー**: macOS は `.command` を Terminal で実行し、サーバーの終了後に AppleScript で自分のウインドウを閉じます。シェルの終了を待ってから閉じるのは、実行中に閉じると確認ダイアログが出るためです。Windows のショートカットは venv の `python.exe` を直接起動します。バッチファイルを挟むと、`Ctrl+C` の後に `cmd.exe` が「バッチ ジョブを終了しますか (Y/N)?」と尋ね、ウインドウが自動で閉じなくなるためです。コンソールは `python.exe` の終了とともに閉じます。
+- **macOS のフォルダ選択画面**: `osascript` から System Events に開かせ、閉じたら元のアプリへ前面を戻します。`osascript` 自身が開く画面は日本語化されず英語で表示され、前面に出すための `activate` にも数秒かかります。Finder に開かせると日本語になりますが、開いている Finder のウインドウもすべて前面に出てきます。System Events は日本語化されていて自分のウインドウを持たないため、この 2 つを避けられます。「オートメーション」の許可が無いなどで開けなければ、`osascript` 自身の画面で開き直します。
 
 ## 5. セキュリティ設計
 
 - **プレビューの分離**: `/raw` 配下のコンテンツは既定で `allow-same-origin` を付けない `sandbox` 属性の iframe に読み込みます。これにより unique origin となり、プレビュー対象の CSS / JS はアプリ本体の DOM・localStorage・Cookie に一切干渉できません。
 - **パストラバーサル対策**: `paths.resolve_within_root()` が `..` や絶対パスを拒否し、解決後の実パスがルート配下に収まっているかを検証します。ルート外へのシンボリックリンクも拒否されます（`follow_symlinks` が有効な場合を除く）。
 - **シェルエスケープの禁止**: LaTeX のコンパイルは常に `-no-shell-escape` を付けて実行し、`\write18` によるシェルコマンド実行を許しません。
+- **フォルダ選択の呼び出し元**: `POST /api/pick-folder` は利用者の PC に選択画面を出すため、要求元がループバックであること・`Host` が `localhost` / `127.0.0.1` / `::1` であること・`Origin` があれば `Host` と一致することを確かめ、満たさなければ `403` を返します。`Host` の確認は DNS リバインディング（攻撃者のドメインを `127.0.0.1` に解決させて呼び出す手口）を、`Origin` の確認は他のサイトからの呼び出しを防ぎます。
 - **バインド先**: 既定のバインド先は `127.0.0.1` です。`--host 0.0.0.0` で公開すると、`/api/browse` を含めローカルのファイル情報が同一ネットワークへ露出するため、信頼できるネットワーク以外では避けてください。
 
 ## 関連ドキュメント

@@ -212,7 +212,7 @@
             </div>
           </div>
           <div class="sidebar__list" id="treeScroller" tabindex="0">
-            <div class="vlist" id="treeViewport">
+            <div class="vlist">
               <div class="vlist__spacer" id="treeSpacer"></div>
               <div class="vlist__rows" id="treeRows"></div>
             </div>
@@ -304,10 +304,10 @@
           class="modal__panel"
           role="dialog"
           aria-modal="true"
-          aria-label="設定"
+          aria-labelledby="settingsTitle"
         >
           <div class="modal__head">
-            <h2 class="modal__title">対象フォルダ</h2>
+            <h2 class="modal__title" id="settingsTitle">設定</h2>
             <button
               class="icon-btn icon-btn--sm"
               data-close="1"
@@ -331,7 +331,13 @@
         </div>
       </div>
 
-      <div class="toast" id="toast" hidden></div>
+      <div
+        class="toast"
+        id="toast"
+        role="status"
+        aria-live="polite"
+        hidden
+      ></div>
     </div>
     <script type="module" src="/static/js/app.js"></script>
   </body>

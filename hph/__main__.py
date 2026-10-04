@@ -12,9 +12,10 @@ from pathlib import Path
 import uvicorn
 
 from . import __version__
+from .browser import open_browser, open_browser_when_ready
 from .config import Config, ConfigError
 from .instance import PortState, probe
-from .server import SHUTDOWN_TIMEOUT_SECONDS, create_app, open_browser, open_browser_when_ready
+from .server import SHUTDOWN_TIMEOUT_SECONDS, create_app
 
 EXIT_CONFIG_ERROR = 2
 EXIT_ALREADY_RUNNING = 3
@@ -37,7 +38,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=None, help="ポート番号")
     parser.add_argument("--no-browser", action="store_true", help="起動時にブラウザを開かない")
     parser.add_argument("--save", action="store_true", help="指定したフォルダを設定ファイルへ保存する")
-    parser.add_argument("--reload", action="store_true", help="開発用オートリロード")
     parser.add_argument("--log-level", default="info", help="uvicorn のログレベル")
     parser.add_argument(
         "--pause-on-exit",

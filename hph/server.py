@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-import mimetypes
+import ipaddress
 import os
 import re
-import threading
-import time
 import webbrowser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Body, FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -23,37 +20,39 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .config import APP_NAME, Config, ConfigError, default_state_dir
 from .index import IndexService
-from .instance import HEALTH_PATH, PortState, probe
+from .instance import HEALTH_PATH
 from .paths import PathAccessError, resolve_within_root
-from .scanner import kind_of
+from .picker import pick_folder
+from .rawfiles import file_error, serve_file
+from .rules import parse_rules
+from .scanner import FileEntry, detect_charset, kind_of
 from .store import UserStore
 from .tex import available_engines, has_dvipdfmx, has_latexmk
 from .tex import cached_pdf as cached_tex_pdf
 from .texjobs import TexJob, TexJobRegistry
 
-logger = logging.getLogger(__name__)
-
 STATIC_DIR = Path(__file__).parent / "static"
+REVALIDATE = {"Cache-Control": "no-cache"}
+
+
+class RevalidatedStaticFiles(StaticFiles):
+    """配信のたびにブラウザへ再検証させ、更新後に古いフロントエンドが残らないようにする。"""
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        """`Cache-Control: no-cache` を付けたファイル応答を返す。"""
+        response = super().file_response(*args, **kwargs)
+        response.headers.update(REVALIDATE)
+        return response
+
+
 RAW_PREFIX = "/raw"
 # 停止時、uvicorn は処理中のリクエストを最大 SHUTDOWN_TIMEOUT_SECONDS 待ってから取り消す
 # （取り消すとトレースバックが出る）。ロングポーリングはそれより短く保留し、待機中に自然に返るようにする。
 WATCH_TIMEOUT_SECONDS = 4.0
 SHUTDOWN_TIMEOUT_SECONDS = 5
-BROWSER_WAIT_SECONDS = 120.0
-BROWSER_POLL_SECONDS = 0.3
 SOURCE_MAX_BYTES = 2 * 1024 * 1024
-DIRECTORY_INDEX_NAMES = ("index.html", "index.htm")
-_META_CHARSET_RE = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([a-zA-Z0-9_\-]+)""", re.IGNORECASE)
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _RAW_REFERER_RE = re.compile(rf"{RAW_PREFIX}/([0-9a-f]+)/")
-
-mimetypes.init()
-mimetypes.add_type("text/javascript", ".js")
-mimetypes.add_type("text/javascript", ".mjs")
-mimetypes.add_type("application/json", ".json")
-mimetypes.add_type("image/svg+xml", ".svg")
-mimetypes.add_type("font/woff2", ".woff2")
-mimetypes.add_type("text/plain", ".tex")
-mimetypes.add_type("application/pdf", ".pdf")
 
 
 def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
@@ -78,6 +77,32 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     app.state.index = index
     app.state.store = user_store
     app.state.tex_jobs = tex_jobs
+
+    def _resolve_entry(entry: FileEntry | None) -> Path:
+        """インデックス上のファイルを実パスへ解決する。解決できなければ PathAccessError。"""
+        if entry is None:
+            raise PathAccessError("ファイルが見つかりません", 404)
+        root = config.root(entry.root_id)
+        if root is None:
+            raise PathAccessError("ルートが見つかりません", 404)
+        return resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+
+    pick_lock = asyncio.Lock()
+
+    @app.post("/api/pick-folder")
+    async def pick_folder_route(request: Request) -> JSONResponse:
+        """OS のフォルダ選択画面を開く。画面は利用者の PC に出るため、同じ PC からの要求に限る。"""
+        if not _is_loopback(request):
+            return _error("この操作は、アプリを動かしている PC からだけ行えます", 403)
+        if not _is_loopback_host(request):
+            return _error("この操作は、localhost のアドレスからだけ行えます", 403)
+        if not _is_same_origin(request):
+            return _error("別のサイトからは、この操作を行えません", 403)
+        if pick_lock.locked():
+            return _error("フォルダの選択画面がすでに開いています", 409)
+        async with pick_lock:
+            result = await asyncio.to_thread(pick_folder)
+        return JSONResponse(result.to_json())
 
     @app.get(HEALTH_PATH)
     async def health() -> JSONResponse:
@@ -113,8 +138,8 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     async def update_config(payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
         updatable = {
             "include_extensions": list,
-            "ignore_dirs": list,
             "ignore_globs": list,
+            "exclude": list,
             "max_depth": int,
             "max_files": int,
             "follow_symlinks": bool,
@@ -128,9 +153,11 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
             "tex_timeout_seconds": float,
         }
         try:
-            for key, caster in updatable.items():
-                if key in payload:
-                    setattr(config, key, caster(payload[key]))
+            changes = {key: caster(payload[key]) for key, caster in updatable.items() if key in payload}
+            # 設定ファイルの読み込みと同じ補正（下限・拡張子の正規化など）を通す
+            normalized = Config.from_dict({**config.to_dict(), **changes})
+            for key in changes:
+                setattr(config, key, getattr(normalized, key))
             config.save()
         except (TypeError, ValueError, OSError) as exc:
             return _error(f"設定を更新できません: {exc}", 400)
@@ -148,16 +175,20 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
         except (ConfigError, OSError) as exc:
             return _error(str(exc), 400)
         await index.rescan(force=True)
-        return JSONResponse({"root": {"id": root.id, "name": root.name, "path": root.path}})
+        return JSONResponse({"root": root.to_dict()})
 
     @app.patch("/api/roots/{root_id}")
-    async def rename_root(root_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
-        root = config.rename_root(root_id, str(payload.get("name", "")))
+    async def update_root(root_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
+        try:
+            exclude = parse_rules(payload["exclude"]) if "exclude" in payload else None
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        root = config.update_root(root_id, name=str(payload.get("name", "")), exclude=exclude)
         if root is None:
             return _error("ルートが見つかりません", 404)
         config.save()
         await index.rescan(force=True)
-        return JSONResponse({"root": {"id": root.id, "name": root.name, "path": root.path}})
+        return JSONResponse({"root": root.to_dict()})
 
     @app.delete("/api/roots/{root_id}")
     async def remove_root(root_id: str) -> JSONResponse:
@@ -237,15 +268,10 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
         """
         file_id = str(payload.get("fileId", ""))
         entry = index.file(file_id)
-        if entry is None:
-            return _error("ファイルが見つかりません", 404)
-        if kind_of(entry.name) != "tex":
+        if entry is not None and kind_of(entry.name) != "tex":
             return _error("LaTeX ファイルではありません", 400)
-        root = config.root(entry.root_id)
-        if root is None:
-            return _error("ルートが見つかりません", 404)
         try:
-            path = resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+            path = _resolve_entry(entry)
         except PathAccessError as exc:
             return _error(exc.message, exc.status_code)
 
@@ -264,19 +290,13 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     @app.get("/api/tex/pdf")
     async def tex_pdf(fileId: str = Query(...), v: str = Query(...)) -> Response:
         """コンパイル済み PDF を返す（プレビューの iframe から参照する）。"""
-        entry = index.file(fileId)
-        if entry is None:
-            return _file_error("ファイルが見つかりません", 404)
-        root = config.root(entry.root_id)
-        if root is None:
-            return _file_error("ルートが見つかりません", 404)
         try:
-            path = resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+            path = _resolve_entry(index.file(fileId))
         except PathAccessError as exc:
-            return _file_error(exc.message, exc.status_code)
+            return file_error(exc.message, exc.status_code)
         pdf = cached_tex_pdf(path, config, v)
         if pdf is None:
-            return _file_error("PDF がまだ生成されていません。再コンパイルしてください", 404)
+            return file_error("PDF がまだ生成されていません。再コンパイルしてください", 404)
         return FileResponse(
             pdf,
             media_type="application/pdf",
@@ -285,14 +305,8 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
 
     @app.get("/api/source")
     async def get_source(fileId: str = Query(...)) -> JSONResponse:
-        entry = index.file(fileId)
-        if entry is None:
-            return _error("ファイルが見つかりません", 404)
-        root = config.root(entry.root_id)
-        if root is None:
-            return _error("ルートが見つかりません", 404)
         try:
-            path = resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+            path = _resolve_entry(index.file(fileId))
             data = path.read_bytes()[:SOURCE_MAX_BYTES]
         except PathAccessError as exc:
             return _error(exc.message, exc.status_code)
@@ -303,20 +317,14 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
                 "fileId": fileId,
                 "path": str(path),
                 "truncated": path.stat().st_size > SOURCE_MAX_BYTES,
-                "text": data.decode(_charset_of(data[:4096]), errors="replace"),
+                "text": data.decode(detect_charset(data[:4096]), errors="replace"),
             }
         )
 
     @app.post("/api/open")
     async def open_externally(payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
-        entry = index.file(str(payload.get("fileId", "")))
-        if entry is None:
-            return _error("ファイルが見つかりません", 404)
-        root = config.root(entry.root_id)
-        if root is None:
-            return _error("ルートが見つかりません", 404)
         try:
-            path = resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
+            path = _resolve_entry(index.file(str(payload.get("fileId", ""))))
             opened = webbrowser.open(path.as_uri())
         except PathAccessError as exc:
             return _error(exc.message, exc.status_code)
@@ -327,16 +335,18 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     @app.api_route(RAW_PREFIX + "/{root_id}/{rel_path:path}", methods=["GET", "HEAD"])
     async def serve_raw(root_id: str, rel_path: str) -> Response:
         """プレビュー本体と、それが参照する相対アセットを配信する。"""
-        return _serve(config, root_id, rel_path)
+        return serve_file(config, root_id, rel_path)
 
     # ------------------------------------------------------------------
     # 静的アセットと SPA シェル
     # ------------------------------------------------------------------
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", RevalidatedStaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     async def index_page() -> Response:
-        return FileResponse(STATIC_DIR / "index.html", media_type="text/html; charset=utf-8")
+        return FileResponse(
+            STATIC_DIR / "index.html", media_type="text/html; charset=utf-8", headers=REVALIDATE
+        )
 
     @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def fallback(full_path: str, request: Request) -> Response:
@@ -347,7 +357,7 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
         referer = request.headers.get("referer", "")
         match = _RAW_REFERER_RE.search(referer)
         if match:
-            return _serve(config, match.group(1), full_path)
+            return serve_file(config, match.group(1), full_path)
         return _error("見つかりません", 404)
 
     return app
@@ -361,71 +371,8 @@ def _tex_job_body(file_id: str, job: TexJob) -> dict[str, Any]:
     body = job.to_json()
     if body.get("status") == "ok":
         fingerprint = str(body.get("fingerprint", ""))
-        body["pdfUrl"] = (
-            f"/api/tex/pdf?fileId={quote(file_id, safe='')}&v={quote(fingerprint, safe='')}"
-        )
+        body["pdfUrl"] = f"/api/tex/pdf?fileId={quote(file_id, safe='')}&v={quote(fingerprint, safe='')}"
     return body
-
-
-def _serve(config: Config, root_id: str, rel_path: str) -> Response:
-    root = config.root(root_id)
-    if root is None:
-        return _file_error("指定されたルートフォルダは登録されていません", 404)
-    try:
-        path = resolve_within_root(root, rel_path, follow_symlinks=config.follow_symlinks)
-    except PathAccessError as exc:
-        return _file_error(exc.message, exc.status_code)
-    if path.is_dir():
-        for name in DIRECTORY_INDEX_NAMES:
-            candidate = path / name
-            if candidate.is_file():
-                path = candidate
-                break
-        else:
-            return _file_error(f"ディレクトリにはプレビューできるファイルがありません: {rel_path}", 404)
-    if not path.is_file():
-        return _file_error(f"ファイルが見つかりません: {rel_path}", 404)
-    try:
-        media_type = _media_type_for(path)
-        headers = {
-            "Cache-Control": "no-cache, must-revalidate",
-            # サンドボックス iframe は opaque origin になるため、明示的に許可する。
-            "Access-Control-Allow-Origin": "*",
-            "X-Frame-Options": "SAMEORIGIN",
-        }
-        return FileResponse(path, media_type=media_type, headers=headers)
-    except OSError as exc:
-        return _file_error(f"ファイルを読み取れません: {exc}", 500)
-
-
-def _media_type_for(path: Path) -> str:
-    guessed, _ = mimetypes.guess_type(path.name)
-    if guessed is None:
-        return "application/octet-stream"
-    if guessed.startswith("text/") or guessed in {"application/json", "image/svg+xml"}:
-        if guessed == "text/html":
-            # 文書自身が charset を宣言していればブラウザの判定に委ねる。
-            try:
-                head = path.open("rb").read(4096)
-            except OSError:
-                head = b""
-            if _META_CHARSET_RE.search(head):
-                return "text/html"
-            return "text/html; charset=utf-8"
-        return f"{guessed}; charset=utf-8"
-    return guessed
-
-
-def _charset_of(head: bytes) -> str:
-    match = _META_CHARSET_RE.search(head)
-    if match:
-        try:
-            candidate = match.group(1).decode("ascii").lower()
-            "".encode(candidate)
-            return candidate
-        except (LookupError, UnicodeDecodeError):
-            pass
-    return "utf-8"
 
 
 def _is_listable_dir(entry: os.DirEntry[str]) -> bool:
@@ -445,48 +392,25 @@ def _toggle(store: UserStore, key: str, value: Any) -> JSONResponse:
     return JSONResponse({"added": added, key: store.snapshot()[key]})
 
 
+def _is_loopback(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_loopback_host(request: Request) -> bool:
+    """Host ヘッダがループバックの名前であること（DNS リバインディング対策）。"""
+    host = request.headers.get("host")
+    return host is not None and urlsplit(f"//{host}").hostname in LOOPBACK_HOSTS
+
+
+def _is_same_origin(request: Request) -> bool:
+    """Origin ヘッダがあれば、Host と一致するときだけ許す（他サイトからの単純リクエストを拒む）。"""
+    origin = request.headers.get("origin")
+    return origin is None or urlsplit(origin).netloc == request.headers.get("host")
+
+
 def _error(message: str, status_code: int) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status_code)
-
-
-def _file_error(message: str, status_code: int) -> HTMLResponse:
-    """iframe 内にそのまま表示できるエラーページ。"""
-    safe = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    body = f"""<!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><title>プレビューを表示できません</title>
-<style>
-  body {{ margin:0; display:grid; place-items:center; min-height:100vh;
-         font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
-         background:#F6F4EF; color:#2B2A27; }}
-  .box {{ max-width:min(520px, 84vw); padding:28px 32px; background:#fff;
-          border:1px solid #E7E3DA; border-radius:14px; text-align:center; }}
-  h1 {{ font-size:15px; margin:0 0 8px; letter-spacing:.02em; }}
-  p  {{ font-size:13px; line-height:1.7; color:#6F6B62; margin:0; word-break:break-all; }}
-</style></head>
-<body><div class="box"><h1>プレビューを表示できません</h1><p>{safe}</p></div></body></html>"""
-    return HTMLResponse(body, status_code=status_code, headers={"Cache-Control": "no-store"})
-
-
-def open_browser(url: str) -> None:
-    """既定のブラウザで開く。開けなくても起動は続ける。"""
-    try:
-        webbrowser.open(url)
-    except Exception:  # pragma: no cover - 環境依存
-        logger.debug("ブラウザを自動起動できませんでした", exc_info=True)
-
-
-def open_browser_when_ready(url: str, host: str, port: int) -> threading.Thread:
-    """サーバーが応答し始めてからブラウザを開く（初回スキャン中に開くと接続エラーの画面になるため）。"""
-
-    def _wait_and_open() -> None:
-        deadline = time.monotonic() + BROWSER_WAIT_SECONDS
-        while probe(host, port) is not PortState.RUNNING:
-            if time.monotonic() > deadline:
-                logger.warning("サーバーが応答しないため、ブラウザを開きませんでした")
-                return
-            time.sleep(BROWSER_POLL_SECONDS)
-        open_browser(url)
-
-    thread = threading.Thread(target=_wait_and_open, daemon=True)
-    thread.start()
-    return thread

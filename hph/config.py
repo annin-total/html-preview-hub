@@ -9,36 +9,44 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
+
+from .rules import ExcludeRule, parse_rules
 
 APP_NAME = "html-preview-hub"
 ENV_CONFIG = "HPH_CONFIG"
 ENV_ROOTS = "HPH_ROOTS"
 ENV_STATE_DIR = "HPH_STATE_DIR"
 
+#: 常に走査せず画面にも出さないフォルダ名（比較は大文字・小文字を区別しない）。
+BUILTIN_IGNORED_DIRS: frozenset[str] = frozenset({"node_modules", "__pycache__", "venv"})
+
+#: 旧形式 `ignore_dirs` の既定値。移行で「未変更」かを判定するためにだけ使う。
+LEGACY_IGNORED_DIRS = (
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".next",
+    ".nuxt",
+    ".cache",
+    "dist",
+    "build",
+    "target",
+    ".mypy_cache",
+    ".pytest_cache",
+)
+
 #: 設定ファイルが存在しない / キーが欠けている場合に使う既定値。
 DEFAULTS: dict[str, Any] = {
     "roots": [],
     "include_extensions": [".html", ".htm", ".xhtml", ".tex"],
-    "ignore_dirs": [
-        ".git",
-        ".hg",
-        ".svn",
-        "node_modules",
-        "__pycache__",
-        ".venv",
-        "venv",
-        ".next",
-        ".nuxt",
-        ".cache",
-        "dist",
-        "build",
-        "target",
-        ".mypy_cache",
-        ".pytest_cache",
-    ],
+    "exclude": [],
     "ignore_globs": [],
     "max_depth": 16,
     "max_files": 50000,
@@ -97,17 +105,29 @@ class Root:
     id: str
     name: str
     path: str
+    exclude: tuple[ExcludeRule, ...] = ()
 
     @classmethod
-    def create(cls, path: str | os.PathLike[str], name: str | None = None) -> Root:
-        """パス（と任意の表示名）から Root を作る。ID はパスから決まる。"""
+    def create(
+        cls, path: str | os.PathLike[str], name: str | None = None, exclude: tuple[ExcludeRule, ...] = ()
+    ) -> Root:
+        """パス（と任意の表示名・除外）から Root を作る。ID はパスから決まる。"""
         resolved = Path(path).expanduser()
         try:
             resolved = resolved.resolve()
         except OSError:  # pragma: no cover - 解決不能でも設定自体は保持する
             resolved = resolved.absolute()
         label = (name or "").strip() or resolved.name or str(resolved)
-        return cls(id=root_id_for(resolved), name=label, path=str(resolved))
+        return cls(id=root_id_for(resolved), name=label, path=str(resolved), exclude=exclude)
+
+    def to_dict(self) -> dict[str, Any]:
+        """設定ファイルと API に書き出す形へ変換する。"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "path": self.path,
+            "exclude": [r.to_dict() for r in self.exclude],
+        }
 
     @property
     def real_path(self) -> Path:
@@ -125,7 +145,7 @@ class Config:
 
     roots: list[Root] = field(default_factory=list)
     include_extensions: list[str] = field(default_factory=lambda: list(DEFAULTS["include_extensions"]))
-    ignore_dirs: list[str] = field(default_factory=lambda: list(DEFAULTS["ignore_dirs"]))
+    exclude: tuple[ExcludeRule, ...] = field(default_factory=lambda: parse_rules(DEFAULTS["exclude"]))
     ignore_globs: list[str] = field(default_factory=lambda: list(DEFAULTS["ignore_globs"]))
     max_depth: int = DEFAULTS["max_depth"]
     max_files: int = DEFAULTS["max_files"]
@@ -161,7 +181,10 @@ class Config:
                 raise ConfigError(f"設定ファイルを読み込めません: {config_path} ({exc})") from exc
             if not isinstance(raw, dict):
                 raise ConfigError(f"設定ファイルの形式が不正です（オブジェクトが必要）: {config_path}")
-        config = cls.from_dict(raw)
+        try:
+            config = cls.from_dict(raw)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"設定ファイルの値が不正です: {config_path} ({exc})") from exc
         config.path = config_path
         env_roots = os.environ.get(ENV_ROOTS, "").strip()
         if env_roots:
@@ -179,11 +202,13 @@ class Config:
             if isinstance(entry, str):
                 roots.append(Root.create(entry))
             elif isinstance(entry, dict) and entry.get("path"):
-                roots.append(Root.create(entry["path"], entry.get("name")))
+                roots.append(
+                    Root.create(entry["path"], entry.get("name"), parse_rules(entry.get("exclude", [])))
+                )
         config = cls(
             roots=_dedupe_roots(roots),
             include_extensions=_normalise_extensions(merged["include_extensions"]),
-            ignore_dirs=[str(x) for x in merged["ignore_dirs"]],
+            exclude=_exclude_from(raw, merged),
             ignore_globs=[str(x) for x in merged["ignore_globs"]],
             max_depth=max(1, int(merged["max_depth"])),
             max_files=max(1, int(merged["max_files"])),
@@ -207,8 +232,9 @@ class Config:
 
     def to_dict(self) -> dict[str, Any]:
         """設定ファイルに書き出せる辞書へ変換する。"""
-        data = {key: getattr(self, key) for key in DEFAULTS if key != "roots"}
-        data["roots"] = [asdict(root) for root in self.roots]
+        data = {key: getattr(self, key) for key in DEFAULTS if key not in ("roots", "exclude")}
+        data["exclude"] = [rule.to_dict() for rule in self.exclude]
+        data["roots"] = [root.to_dict() for root in self.roots]
         return data
 
     def save(self) -> Path:
@@ -239,11 +265,17 @@ class Config:
         self.roots = [r for r in self.roots if r.id != root_id]
         return len(self.roots) != before
 
-    def rename_root(self, root_id: str, name: str) -> Root | None:
-        """ルートの表示名を変更する。対象が無ければ None。"""
+    def update_root(
+        self, root_id: str, *, name: str | None = None, exclude: tuple[ExcludeRule, ...] | None = None
+    ) -> Root | None:
+        """ルートの表示名・除外を変更する。対象が無ければ None。"""
         for i, root in enumerate(self.roots):
             if root.id == root_id:
-                updated = replace(root, name=name.strip() or root.name)
+                updated = replace(
+                    root,
+                    name=(name or "").strip() or root.name,
+                    exclude=root.exclude if exclude is None else exclude,
+                )
                 self.roots[i] = updated
                 return updated
         return None
@@ -279,3 +311,26 @@ def _dedupe_roots(roots: list[Root]) -> list[Root]:
         seen.add(root.id)
         out.append(root)
     return out
+
+
+def _legacy_rules(names: list[Any]) -> list[dict[str, str]]:
+    """旧形式 `ignore_dirs` から、なお意味のある名前だけをフォルダ名の一致ルールにする。"""
+    if {str(n) for n in names} == set(LEGACY_IGNORED_DIRS):
+        return []
+    rules: list[dict[str, str]] = []
+    for item in names:
+        name = str(item).strip()
+        if not name or "/" in name or "\\" in name or name.startswith("."):
+            continue
+        if name.casefold() in BUILTIN_IGNORED_DIRS:
+            continue
+        rules.append({"target": "folder", "match": "equals", "value": name})
+    return rules
+
+
+def _exclude_from(raw: dict[str, Any], merged: dict[str, Any]) -> tuple[ExcludeRule, ...]:
+    """`exclude` と旧形式の `ignore_dirs` を合わせる。"""
+    legacy = raw.get("ignore_dirs")
+    if legacy is None:
+        return parse_rules(merged["exclude"])
+    return parse_rules([*raw.get("exclude", []), *_legacy_rules(legacy)])

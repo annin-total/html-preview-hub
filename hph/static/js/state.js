@@ -1,10 +1,4 @@
-/**
- * アプリの状態管理。
- *
- * - サーバーから受け取ったインデックスを、描画に使いやすい形へ 1 度だけ整形する。
- * - 検索用の文字列（haystack）もリビジョンごとに 1 度だけ構築し、入力のたびの
- *   走査コストを最小化する（数千件でもインクリメンタルサーチが止まらない）。
- */
+/** アプリの状態管理。派生データと検索用の文字列（haystack）は取り込み時に 1 度だけ作る。 */
 
 import { storage } from "./util.js";
 
@@ -96,9 +90,7 @@ export class Store {
   // ----------------------------------------------------------------
   /**
    * サーバーのインデックスを取り込み、派生データを構築する。
-   *
-   * `preserveUserState` は、取得中にユーザーがお気に入り等を更新した場合に使う。
-   * 取得開始より前のスナップショットでローカルの操作を打ち消さないための保護。
+   * `preserveUserState` なら、取得中にされたお気に入り等の操作を上書きしない。
    */
   load(payload, { preserveUserState = false } = {}) {
     this.index = payload;
@@ -151,6 +143,10 @@ export class Store {
     return this.treeQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
   }
 
+  get roots() {
+    return this.index ? this.index.roots : [];
+  }
+
   get sort() {
     return SORTS.find((s) => s.id === this.prefs.sort) || SORTS[0];
   }
@@ -174,10 +170,6 @@ export class Store {
 
   isFavorite(fileId) {
     return this.favorites.has(fileId);
-  }
-
-  isHidden(folderId) {
-    return this.hidden.has(folderId);
   }
 
   /** ホーム画面に出すフォルダ（検索・非表示・お気に入り絞り込み・並び替えを適用）。 */
@@ -268,13 +260,12 @@ export class Store {
   /** ヘッダー表示用の統計値。 */
   stats() {
     if (!this.index)
-      return { folders: 0, files: 0, hidden: 0, roots: 0, truncated: false };
+      return { folders: 0, files: 0, hidden: 0, truncated: false };
     const hidden = this.folders.filter((f) => this.hidden.has(f.id)).length;
     return {
       folders: this.folders.length - hidden,
       files: this.filesById.size,
       hidden,
-      roots: this.index.roots.length,
       truncated: this.index.truncated,
     };
   }

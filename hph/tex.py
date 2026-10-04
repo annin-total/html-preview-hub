@@ -131,15 +131,6 @@ def _strip_comments(text: str) -> str:
     return re.sub(r"(?<!\\)%.*", "", text)
 
 
-def read_preamble(path: Path, limit: int = PREAMBLE_BYTES) -> str:
-    """先頭部分をテキストとして読む（判定用なので厳密なデコードは行わない）。"""
-    try:
-        with path.open("rb") as fh:
-            return fh.read(limit).decode("utf-8", errors="replace")
-    except OSError:
-        return ""
-
-
 def choose_engine(source_head: str, available: dict[str, str], configured: str = "auto") -> Engine | None:
     """マジックコメント → プリアンブル → 既定順の優先度でエンジンを選ぶ。"""
     if configured and configured != "auto":
@@ -155,11 +146,8 @@ def choose_engine(source_head: str, available: dict[str, str], configured: str =
             return ENGINES[wanted]
 
     for pattern, name in PREAMBLE_HINTS:
-        if pattern.search(source_head) and name in available:
-            engine = ENGINES[name]
-            if engine.via_dvi and not has_dvipdfmx():
-                continue
-            return engine
+        if pattern.search(source_head) and name in available and _is_usable(ENGINES[name]):
+            return ENGINES[name]
 
     # CJK を含むのに日本語向けパッケージが無い場合は、UTF-8 をそのまま扱える方を優先する。
     if _CJK_RE.search(source_head):
@@ -168,12 +156,14 @@ def choose_engine(source_head: str, available: dict[str, str], configured: str =
                 return ENGINES[name]
 
     for name in FALLBACK_ORDER:
-        if name in available:
-            engine = ENGINES[name]
-            if engine.via_dvi and not has_dvipdfmx():
-                continue
-            return engine
+        if name in available and _is_usable(ENGINES[name]):
+            return ENGINES[name]
     return None
+
+
+def _is_usable(engine: Engine) -> bool:
+    """DVI を経由するエンジンは dvipdfmx が無いと PDF にできない。"""
+    return not engine.via_dvi or has_dvipdfmx()
 
 
 # ----------------------------------------------------------------------
@@ -405,8 +395,7 @@ def _build_commands(
     if font_fallback:
         argument = f"{_font_fallback_directive()}\\input{{{name}}}"
         return [
-            [engine.command, *common, f"-jobname={tex.stem}", argument]
-            for _ in range(config.tex_max_passes)
+            [engine.command, *common, f"-jobname={tex.stem}", argument] for _ in range(config.tex_max_passes)
         ]
 
     if engine.via_dvi:

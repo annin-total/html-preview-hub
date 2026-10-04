@@ -132,10 +132,25 @@ def test_config_update_changes_scan_result(client: TestClient) -> None:
     assert payload["files"][0]["name"] == "notes.txt"
 
 
+def test_config_update_applies_same_bounds_as_config_file(client: TestClient, config: Config) -> None:
+    payload = {"max_depth": 0, "tex_timeout_seconds": 0, "tex_engine": " ", "include_extensions": ["HTML"]}
+    response = client.put("/api/config", json=payload)
+    assert response.status_code == 200
+    assert (config.max_depth, config.tex_timeout_seconds) == (1, 5.0)
+    assert config.tex_engine == "auto"
+    assert config.include_extensions == [".html"]
+
+
 def test_spa_shell_and_static_assets(client: TestClient) -> None:
     assert client.get("/").status_code == 200
     assert client.get("/static/js/app.js").status_code == 200
     assert client.get("/static/css/app.css").status_code == 200
+
+
+def test_spa_shell_and_static_assets_are_revalidated(client: TestClient) -> None:
+    """更新後に古い画面が残らないよう、ブラウザに毎回確かめさせる。"""
+    for path in ("/", "/static/js/app.js"):
+        assert "no-cache" in client.get(path).headers["cache-control"]
 
 
 def test_unknown_path_without_referer_is_404(client: TestClient) -> None:
@@ -264,9 +279,7 @@ def test_compile_does_not_block_other_requests(client: TestClient, install_tex_s
     assert _poll_job(client, file_id)["status"] == "ok"
 
 
-def test_repeated_compile_shares_running_job(
-    client: TestClient, install_tex_stub, tmp_path: Path
-) -> None:
+def test_repeated_compile_shares_running_job(client: TestClient, install_tex_stub, tmp_path: Path) -> None:
     """実行中に同じファイルの要求が重なっても、エンジンは 1 回しか動かさない。"""
     counter = tmp_path / "runs.txt"
     _install_stub_engines(install_tex_stub, body=f'printf x >> "{counter}"\nsleep 1\n{WRITE_PDF}')

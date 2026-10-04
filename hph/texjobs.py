@@ -93,9 +93,7 @@ class TexJobRegistry:
         if existing is not None and existing.running:
             return existing
         self._prune()
-        task = asyncio.create_task(
-            self._compile(path, config, force=force), name=f"hph-tex:{file_id}"
-        )
+        task = asyncio.create_task(self._compile(path, config, force=force), name=f"hph-tex:{file_id}")
         job = TexJob(file_id=file_id, task=task)
         task.add_done_callback(lambda _: job.mark_finished())
         self._jobs[file_id] = job

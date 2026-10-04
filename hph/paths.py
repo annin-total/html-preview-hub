@@ -57,8 +57,3 @@ def _is_within(path: Path, base: Path) -> bool:
     except ValueError:
         return path == base
     return True
-
-
-def relative_to_root(root: Root, path: Path) -> str:
-    """ルートからの相対パスを POSIX 形式の文字列で返す。"""
-    return path.relative_to(root.real_path).as_posix()
