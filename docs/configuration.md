@@ -27,9 +27,9 @@ cp config.example.json config.json
 
 | キー | 既定値 | 説明 |
 | --- | --- | --- |
-| `roots` | `[]` | `{ "name": 表示名, "path": フォルダ }` の配列 |
+| `roots` | `[]` | `{ "name": 表示名, "path": フォルダ, "exclude": ルールの配列 }` の配列。`name` と `exclude` は省略できます |
 | `include_extensions` | `[".html", ".htm", ".xhtml", ".tex"]` | 一覧に載せる拡張子 |
-| `ignore_dirs` | `.git`, `node_modules`, `dist` など | 走査しないフォルダ名 |
+| `exclude` | `[]` | すべてのルートに適用する除外ルールの配列（[除外ルール](#除外ルール)） |
 | `ignore_globs` | `[]` | 除外する相対パスの glob |
 | `max_depth` | `16` | 潜る階層の上限 |
 | `max_files` | `50000` | 読み込むファイル数の上限 |
@@ -38,6 +38,32 @@ cp config.example.json config.json
 | `watch_interval_seconds` | `4.0` | 自動再スキャン間隔（`0` で無効） |
 | `host` / `port` | `127.0.0.1` / `8765` | 待ち受け先 |
 | `open_browser` | `true` | 起動時にブラウザを開く |
+
+### 除外ルール
+
+`exclude`（全体）と `roots[].exclude`（そのフォルダだけ）は、同じ形のルールの配列です。スキャンは「全体 ＋ そのフォルダの除外」をまとめて判定します。
+
+```json
+{ "target": "folder", "match": "contains", "value": "draft" }
+```
+
+| 項目 | 値 |
+| --- | --- |
+| `target` | `folder`（フォルダ名に当てる。一致したフォルダは中身ごと走査しない）／ `file`（拡張子を含むファイル名に当てる） |
+| `match` | `equals`（一致）／ `contains`（含む）／ `prefix`（で始まる）／ `suffix`（で終わる） |
+| `value` | 名前。前後の空白を除いて 1〜200 文字で、`/` と `\` を含められない |
+
+- 大文字・小文字は区別しません。`folder` はルート配下のどの深さのフォルダにも当たります。
+- 1 つの配列に 100 件までです。3 項目とも同じルール（`value` は大文字・小文字を無視して比べる）は 1 件にまとめられます。
+- 形が不正なとき、設定ファイルでは起動を中止し（終了コード `2`）、API では `400` を返します。
+- 次のフォルダは常に走査せず、設定にも画面にも現れません。`node_modules`・`__pycache__`・`venv`（大文字・小文字は区別しない）と、名前が `.` で始まるフォルダです。
+- `ignore_globs` は全体の設定で、画面では編集できません。設定ファイルで指定します。
+
+旧形式の `ignore_dirs` が設定ファイルにある場合は、読み込み時に `exclude` へ移します。
+
+- 旧形式の既定値（`.git`・`.hg`・`.svn`・`node_modules`・`__pycache__`・`.venv`・`venv`・`dist`・`build` など 15 件）とまったく同じ集合なら、何も移しません。
+- それ以外は、常に除外される名前と `.` で始まる名前を除いた残りを `{"target": "folder", "match": "equals", "value": 名前}` として `exclude` に合流させます（重複はまとめます）。
+- 保存では `exclude` だけを書き、`ignore_dirs` は書きません。
 
 ### LaTeX 関連キー
 

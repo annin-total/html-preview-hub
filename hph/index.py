@@ -47,6 +47,7 @@ class Snapshot:
                     "name": root.name,
                     "path": root.path,
                     "exists": root.exists(),
+                    "exclude": [rule.to_dict() for rule in root.exclude],
                     "fileCount": sum(1 for f in self.files.values() if f.root_id == root.id),
                 }
                 for root in config.roots

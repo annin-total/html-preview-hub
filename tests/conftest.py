@@ -3,18 +3,36 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import hph.picker as picker
 from hph.config import Config
 from hph.server import create_app
 from hph.store import UserStore
+
+
+@pytest.fixture(autouse=True)
+def _forbid_real_folder_dialog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """どのテストも、本物の OS フォルダ選択画面を開けないようにする。"""
+
+    def refuse(*_: object, **__: object) -> None:
+        raise AssertionError("テストから本物の選択画面を開かない")
+
+    # subprocess モジュールそのものは他のテストも使うため、picker が見る名前だけを差し替える
+    monkeypatch.setattr(
+        picker,
+        "subprocess",
+        SimpleNamespace(run=refuse, TimeoutExpired=subprocess.TimeoutExpired, DEVNULL=subprocess.DEVNULL),
+    )
 
 
 @pytest.fixture()

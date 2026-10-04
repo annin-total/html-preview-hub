@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import os
 import re
 import webbrowser
@@ -10,7 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Body, FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -21,7 +22,9 @@ from .config import APP_NAME, Config, ConfigError, default_state_dir
 from .index import IndexService
 from .instance import HEALTH_PATH
 from .paths import PathAccessError, resolve_within_root
+from .picker import pick_folder
 from .rawfiles import file_error, serve_file
+from .rules import parse_rules
 from .scanner import FileEntry, detect_charset, kind_of
 from .store import UserStore
 from .tex import available_engines, has_dvipdfmx, has_latexmk
@@ -29,12 +32,26 @@ from .tex import cached_pdf as cached_tex_pdf
 from .texjobs import TexJob, TexJobRegistry
 
 STATIC_DIR = Path(__file__).parent / "static"
+REVALIDATE = {"Cache-Control": "no-cache"}
+
+
+class RevalidatedStaticFiles(StaticFiles):
+    """配信のたびにブラウザへ再検証させ、更新後に古いフロントエンドが残らないようにする。"""
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        """`Cache-Control: no-cache` を付けたファイル応答を返す。"""
+        response = super().file_response(*args, **kwargs)
+        response.headers.update(REVALIDATE)
+        return response
+
+
 RAW_PREFIX = "/raw"
 # 停止時、uvicorn は処理中のリクエストを最大 SHUTDOWN_TIMEOUT_SECONDS 待ってから取り消す
 # （取り消すとトレースバックが出る）。ロングポーリングはそれより短く保留し、待機中に自然に返るようにする。
 WATCH_TIMEOUT_SECONDS = 4.0
 SHUTDOWN_TIMEOUT_SECONDS = 5
 SOURCE_MAX_BYTES = 2 * 1024 * 1024
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _RAW_REFERER_RE = re.compile(rf"{RAW_PREFIX}/([0-9a-f]+)/")
 
 
@@ -70,6 +87,23 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
             raise PathAccessError("ルートが見つかりません", 404)
         return resolve_within_root(root, entry.rel_path, follow_symlinks=config.follow_symlinks)
 
+    pick_lock = asyncio.Lock()
+
+    @app.post("/api/pick-folder")
+    async def pick_folder_route(request: Request) -> JSONResponse:
+        """OS のフォルダ選択画面を開く。画面は利用者の PC に出るため、同じ PC からの要求に限る。"""
+        if not _is_loopback(request):
+            return _error("この操作は、アプリを動かしている PC からだけ行えます", 403)
+        if not _is_loopback_host(request):
+            return _error("この操作は、localhost のアドレスからだけ行えます", 403)
+        if not _is_same_origin(request):
+            return _error("別のサイトからは、この操作を行えません", 403)
+        if pick_lock.locked():
+            return _error("フォルダの選択画面がすでに開いています", 409)
+        async with pick_lock:
+            result = await asyncio.to_thread(pick_folder)
+        return JSONResponse(result.to_json())
+
     @app.get(HEALTH_PATH)
     async def health() -> JSONResponse:
         """起動済みのインスタンスを見分けるための応答。"""
@@ -104,8 +138,8 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     async def update_config(payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
         updatable = {
             "include_extensions": list,
-            "ignore_dirs": list,
             "ignore_globs": list,
+            "exclude": list,
             "max_depth": int,
             "max_files": int,
             "follow_symlinks": bool,
@@ -141,16 +175,20 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
         except (ConfigError, OSError) as exc:
             return _error(str(exc), 400)
         await index.rescan(force=True)
-        return JSONResponse({"root": {"id": root.id, "name": root.name, "path": root.path}})
+        return JSONResponse({"root": root.to_dict()})
 
     @app.patch("/api/roots/{root_id}")
-    async def rename_root(root_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
-        root = config.rename_root(root_id, str(payload.get("name", "")))
+    async def update_root(root_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> JSONResponse:
+        try:
+            exclude = parse_rules(payload["exclude"]) if "exclude" in payload else None
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        root = config.update_root(root_id, name=str(payload.get("name", "")), exclude=exclude)
         if root is None:
             return _error("ルートが見つかりません", 404)
         config.save()
         await index.rescan(force=True)
-        return JSONResponse({"root": {"id": root.id, "name": root.name, "path": root.path}})
+        return JSONResponse({"root": root.to_dict()})
 
     @app.delete("/api/roots/{root_id}")
     async def remove_root(root_id: str) -> JSONResponse:
@@ -302,11 +340,13 @@ def create_app(config: Config, *, store: UserStore | None = None) -> FastAPI:
     # ------------------------------------------------------------------
     # 静的アセットと SPA シェル
     # ------------------------------------------------------------------
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", RevalidatedStaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     async def index_page() -> Response:
-        return FileResponse(STATIC_DIR / "index.html", media_type="text/html; charset=utf-8")
+        return FileResponse(
+            STATIC_DIR / "index.html", media_type="text/html; charset=utf-8", headers=REVALIDATE
+        )
 
     @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def fallback(full_path: str, request: Request) -> Response:
@@ -350,6 +390,26 @@ def _toggle(store: UserStore, key: str, value: Any) -> JSONResponse:
         return _error("ID は必須です", 400)
     added = store.toggle(key, identifier)
     return JSONResponse({"added": added, key: store.snapshot()[key]})
+
+
+def _is_loopback(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_loopback_host(request: Request) -> bool:
+    """Host ヘッダがループバックの名前であること（DNS リバインディング対策）。"""
+    host = request.headers.get("host")
+    return host is not None and urlsplit(f"//{host}").hostname in LOOPBACK_HOSTS
+
+
+def _is_same_origin(request: Request) -> bool:
+    """Origin ヘッダがあれば、Host と一致するときだけ許す（他サイトからの単純リクエストを拒む）。"""
+    origin = request.headers.get("origin")
+    return origin is None or urlsplit(origin).netloc == request.headers.get("host")
 
 
 def _error(message: str, status_code: int) -> JSONResponse:

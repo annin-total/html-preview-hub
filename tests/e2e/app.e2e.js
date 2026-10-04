@@ -231,6 +231,106 @@ const assert = require("assert");
     "t キーで戻る",
   );
 
+  // 11. 設定: 共通の除外条件の追加・削除でカードが増減する
+  const folderCard = (name) =>
+    page.locator(`.card[data-folder-id$=":${name}"]`);
+  await page.goto(`${BASE}/#/`, { waitUntil: "load" });
+  await page.fill("#homeSearch", "");
+  await folderCard("scratch").waitFor();
+  await page.click("#settingsBtn");
+  // ショートカット一覧は変更できない参照情報なので、開いた直後から見える
+  await page
+    .locator('section[aria-labelledby="secShortcuts"] .shortcut-list')
+    .waitFor({ state: "visible", timeout: 3000 });
+  const excludeSection = page.locator('section[aria-labelledby="secExclude"]');
+  await excludeSection.locator('input[aria-label="名前"]').fill("scratch");
+  await excludeSection.locator(".rule-form .pill").click();
+  await folderCard("scratch").waitFor({ state: "detached" });
+  await excludeSection
+    .locator(
+      '.rule__remove[aria-label="「フォルダ名が「scratch」と一致する」を削除"]',
+    )
+    .click();
+  await folderCard("scratch").waitFor();
+  await excludeSection.locator(".rule-empty").waitFor();
+
+  // 12. 設定: 種類のチェックでカードが増減し、最後の 1 つは外せない
+  const latex = page.locator('label.check:has-text("LaTeX") input');
+  const html = page.locator('label.check:has-text("HTML") input');
+  await latex.uncheck();
+  await folderCard("tex").waitFor({ state: "detached" });
+  assert(await html.isDisabled(), "最後の 1 つ（HTML）は外せない");
+  await latex.check();
+  await folderCard("tex").waitFor();
+  assert(!(await html.isDisabled()), "2 つともオンなら外せる");
+
+  // 13. 設定: 選択画面で選んだフォルダが追加される（API は差し替える）
+  const pickWith = async (status, body) => {
+    await page.unroute("**/api/pick-folder");
+    await page.route("**/api/pick-folder", (route) =>
+      route.fulfill({ status, json: body }),
+    );
+  };
+  const addFolderBtn = page.locator(
+    'section[aria-labelledby="secRoots"] .section-head .pill',
+  );
+  await pickWith(200, { status: "selected", path: __dirname });
+  await addFolderBtn.click();
+  const e2eRow = page.locator(".root-row", {
+    has: page.locator(".root-row__name", { hasText: /^e2e$/ }),
+  });
+  await e2eRow.waitFor();
+  assert.equal(await e2eRow.locator(".root-row__count").textContent(), "0 件");
+  await e2eRow.locator('button[aria-label="e2e を対象から削除"]').click();
+  await e2eRow.locator(".root-row__confirm .chip--danger").click();
+  await e2eRow.waitFor({ state: "detached" });
+
+  // 14. 設定: 選択画面が使えないとき・403 のときはアプリ内の一覧に切り替わる
+  for (const [status, body] of [
+    [200, { status: "unavailable", message: "x" }],
+    [403, { error: "x" }],
+  ]) {
+    await pickWith(status, body);
+    await addFolderBtn.click();
+    await page.locator(".browser .browser__note").waitFor();
+    assert(
+      await page.evaluate(() =>
+        document.activeElement.classList.contains("browser__item"),
+      ),
+      "一覧の最初の行にフォーカスが移る",
+    );
+    await page.click(".browser__foot .chip");
+    await page.locator(".browser").waitFor({ state: "detached" });
+  }
+  await page.unroute("**/api/pick-folder");
+
+  // 15. 設定: フォルダごとの除外条件は、札の再描画をまたいでも失われない
+  const sampleRow = page.locator(".root-row").first();
+  await sampleRow.locator("summary").click();
+  const addRootRule = async (value) => {
+    await sampleRow.locator('input[aria-label="名前"]').fill(value);
+    await sampleRow.locator(".rule-form .pill").click();
+    await sampleRow
+      .locator(".rule:not(.is-pending)", { hasText: value })
+      .waitFor();
+  };
+  await addRootRule("e2e-rule-a");
+  await sampleRow.locator("button.chip", { hasText: /^削除$/ }).click();
+  await sampleRow.locator(".root-row__confirm .chip").first().click();
+  await addRootRule("e2e-rule-b");
+  const savedRoot = (
+    await (await page.request.get(base + "/api/config")).json()
+  ).config.roots[0];
+  assert.deepEqual(
+    savedRoot.exclude.map((rule) => rule.value),
+    ["e2e-rule-a", "e2e-rule-b"],
+    "再描画のあとに足しても、先に保存した条件が残る",
+  );
+  await page.request.patch(`${base}/api/roots/${savedRoot.id}`, {
+    data: { exclude: [] },
+  });
+  await page.keyboard.press("Escape");
+
   console.log("E2E OK / console errors:", errors);
   await browser.close();
 })().catch((e) => {
